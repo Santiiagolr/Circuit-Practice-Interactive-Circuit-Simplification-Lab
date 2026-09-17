@@ -1,0 +1,48 @@
+# Dependencias
+node_modules/
+
+# Builds y cachés de Vite
+dist/
+dist-ssr/
+.vite/
+
+# Variables de entorno locales
+.env
+.env.*
+!.env.example
+
+# Logs
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+# Cobertura y resultados de herramientas de QA
+coverage/
+playwright-report/
+test-results/
+
+# Editores e IDEs
+.vscode/*
+!.vscode/extensions.json
+!.vscode/settings.json
+.idea/
+*.iml
+
+# Sistema operativo
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Archivos de Visual Studio y Windows
+*.suo
+*.user
+*.userosscache
+*.sln.docstates
+*.ntvs*
+*.njsproj
+*.sw?
+
