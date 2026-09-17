@@ -215,6 +215,34 @@ function handleKeyboardSelect(event, nodeId, onSelect) {
   }
 }
 
+function handleCircuitCanvasClick(event, onSelect) {
+  const target = event.target;
+  if (target.closest && target.closest('[data-component-id]')) return;
+
+  let closest = null;
+  const components = event.currentTarget.querySelectorAll('[data-component-id]');
+  components.forEach((component) => {
+    const hitbox = component.querySelector('[data-component-hitbox]');
+    if (!hitbox) return;
+
+    const bounds = hitbox.getBoundingClientRect();
+    const distance = Math.hypot(
+      event.clientX - (bounds.left + bounds.width / 2),
+      event.clientY - (bounds.top + bounds.height / 2),
+    );
+    if (!closest || distance < closest.distance) {
+      closest = { id: component.getAttribute('data-component-id'), distance };
+    }
+  });
+
+  if (closest && closest.distance <= 28) {
+    onSelect(closest.id);
+    return;
+  }
+
+  onSelect(null);
+}
+
 function RenderNode({ node, x, y, selectedIds, onSelect, isMessy, showFlow, filterIds }) {
   if (node.type === 'leaf') {
     const isSelected = selectedIds.includes(node.id);
@@ -228,6 +256,7 @@ function RenderNode({ node, x, y, selectedIds, onSelect, isMessy, showFlow, filt
 
     return (
       <g
+        data-component-id={node.id}
         transform={'translate(' + x + ', ' + y + ')'}
         className={'circuit-component ' + (isSelected ? 'is-selected ' : '') + (isEquivalent ? 'is-equivalent' : '')}
         role="button"
@@ -242,7 +271,16 @@ function RenderNode({ node, x, y, selectedIds, onSelect, isMessy, showFlow, filt
         filter={filter}
       >
         <g className={isEquivalent ? 'circuit-component--merge' : undefined}>
-          <rect x="-12" y="-16" width={node.w + 24} height={node.h + 34} rx="13" fill="transparent" pointerEvents="all" />
+          <rect
+            x="-12"
+            y="-16"
+            width={node.w + 24}
+            height={node.h + 34}
+            rx="13"
+            fill="transparent"
+            data-component-hitbox="true"
+            pointerEvents="none"
+          />
           <rect
             x="0"
             y="0"
@@ -404,17 +442,16 @@ export default function CircuitSVG({ tree, selectedIds, onSelect, isMessy, showF
   };
 
   return (
-    <div className="circuit-scroll">
+    <div className="circuit-scroll circuit-scroll--fit">
       <svg
         className="circuit-svg"
         width={width}
         height={height}
         viewBox={'0 0 ' + width + ' ' + height}
         preserveAspectRatio="xMidYMid meet"
-        style={{ minWidth: Math.max(480, Math.min(width, 980)) + 'px' }}
         role="group"
         aria-label="Circuito básico interactivo"
-        onClick={() => onSelect(null)}
+        onClick={(event) => handleCircuitCanvasClick(event, onSelect)}
       >
         <SvgDefs prefix={prefix} />
         <rect width={width} height={height} fill={'url(#' + prefix + '-grid-major)'} pointerEvents="all" />

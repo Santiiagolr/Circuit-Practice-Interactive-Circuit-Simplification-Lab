@@ -207,6 +207,71 @@ function FeedbackBanner({ feedback, mode }) {
   );
 }
 
+function Telemetry({ steps, mistakes, score, streak, bestStreak, isSolved, compact = false }) {
+  return (
+    <div className={'telemetry' + (compact ? ' telemetry--topbar' : '')} aria-label="Estado del ejercicio">
+      <div className="telemetry-cell">
+        <span className="telemetry-label">Paso</span>
+        <strong>{String(steps).padStart(2, '0')}</strong>
+      </div>
+      <div className="telemetry-cell">
+        <span className="telemetry-label">Fallos</span>
+        <strong>{String(mistakes).padStart(2, '0')}</strong>
+      </div>
+      <div className="telemetry-cell">
+        <span className="telemetry-label">Puntos</span>
+        <strong>{score}</strong>
+      </div>
+      <div className="telemetry-cell telemetry-cell--streak">
+        <span className="telemetry-label">Racha</span>
+        <strong>{streak}</strong>
+        <small>mejor {bestStreak}</small>
+      </div>
+      <div className="telemetry-state">
+        <span className={'status-lamp' + (isSolved ? ' is-solved' : '')} />
+        <span>{isSolved ? 'Circuito medido' : 'Fuente activa · 12 V'}</span>
+      </div>
+    </div>
+  );
+}
+
+function ExerciseActions({
+  selectedCount,
+  isSolved,
+  openSwitchSelected,
+  onCombine,
+  onDeleteSwitch,
+  onNewCircuit,
+  compact = false,
+}) {
+  return (
+    <div className={'action-group' + (compact ? ' action-group--topbar' : '')} aria-label="Acciones de reducción">
+      <button
+        className="button button--series"
+        disabled={selectedCount < 2 || isSolved}
+        onClick={() => onCombine('series')}
+      >
+        <Spline size={17} /> Serie
+      </button>
+      <button
+        className="button button--parallel"
+        disabled={selectedCount < 2 || isSolved}
+        onClick={() => onCombine('parallel')}
+      >
+        <Layers size={17} /> Paralelo
+      </button>
+      {openSwitchSelected && (
+        <button className="button button--danger" onClick={onDeleteSwitch}>
+          <XCircle size={17} /> Eliminar abierto
+        </button>
+      )}
+      <button className="button button--quiet" onClick={onNewCircuit}>
+        <RefreshCw size={16} /> Nuevo circuito
+      </button>
+    </div>
+  );
+}
+
 function App() {
   const feedbackKeyRef = useRef(0);
   const historyRef = useRef({});
@@ -538,11 +603,34 @@ function App() {
   return (
     <div className="app-shell">
       <header className="topbar">
-        <div className="brand-lockup">
-          <div className="brand-mark" aria-hidden="true"><Zap size={22} /></div>
-          <div>
-            <p className="brand-kicker">Laboratorio 01</p>
-            <p className="brand-name">Circuitos en equilibrio</p>
+        <div className="topbar-main">
+          <div className="brand-lockup">
+            <div className="brand-mark" aria-hidden="true"><Zap size={22} /></div>
+            <div>
+              <p className="brand-kicker">Laboratorio 01</p>
+              <p className="brand-name">Circuitos en equilibrio</p>
+            </div>
+          </div>
+
+          <div className="topbar-quick">
+            <Telemetry
+              steps={steps}
+              mistakes={mistakes}
+              score={progress.score}
+              streak={progress.streak}
+              bestStreak={progress.bestStreak}
+              isSolved={isSolved}
+              compact
+            />
+            <ExerciseActions
+              selectedCount={selectedIds.length}
+              isSolved={isSolved}
+              openSwitchSelected={openSwitchSelected}
+              onCombine={handleCombine}
+              onDeleteSwitch={handleDeleteSwitch}
+              onNewCircuit={() => createExercise()}
+              compact
+            />
           </div>
         </div>
 
@@ -646,33 +734,9 @@ function App() {
             <h1>Simplifica el circuito sin perderte en la malla.</h1>
             <p>
               Lee la topología, selecciona los componentes vecinos y decide si forman
-              una conexión en serie o en paralelo. En teléfono, desliza el área del
-              circuito si el ejercicio necesita más espacio.
+              una conexión en serie o en paralelo. El circuito se ajusta al espacio
+              disponible para que puedas leerlo completo también en teléfono.
             </p>
-          </div>
-
-          <div className="telemetry" aria-label="Estado del ejercicio">
-            <div className="telemetry-cell">
-              <span className="telemetry-label">Paso</span>
-              <strong>{String(steps).padStart(2, '0')}</strong>
-            </div>
-            <div className="telemetry-cell">
-              <span className="telemetry-label">Fallos</span>
-              <strong>{String(mistakes).padStart(2, '0')}</strong>
-            </div>
-            <div className="telemetry-cell">
-              <span className="telemetry-label">Puntos</span>
-              <strong>{progress.score}</strong>
-            </div>
-            <div className="telemetry-cell telemetry-cell--streak">
-              <span className="telemetry-label">Racha</span>
-              <strong>{progress.streak}</strong>
-              <small>mejor {progress.bestStreak}</small>
-            </div>
-            <div className="telemetry-state">
-              <span className={'status-lamp' + (isSolved ? ' is-solved' : '')} />
-              <span>{isSolved ? 'Circuito medido' : 'Fuente activa · 12 V'}</span>
-            </div>
           </div>
         </section>
 
@@ -688,30 +752,7 @@ function App() {
             </span>
           </div>
 
-          <div className="action-group">
-            <button
-              className="button button--series"
-              disabled={selectedIds.length < 2 || isSolved}
-              onClick={() => handleCombine('series')}
-            >
-              <Spline size={17} /> Serie
-            </button>
-            <button
-              className="button button--parallel"
-              disabled={selectedIds.length < 2 || isSolved}
-              onClick={() => handleCombine('parallel')}
-            >
-              <Layers size={17} /> Paralelo
-            </button>
-            {openSwitchSelected && (
-              <button className="button button--danger" onClick={handleDeleteSwitch}>
-                <XCircle size={17} /> Eliminar abierto
-              </button>
-            )}
-            <button className="button button--quiet" onClick={() => createExercise()}>
-              <RefreshCw size={16} /> Nuevo circuito
-            </button>
-          </div>
+          <span className="control-strip-note">Controles de reducción fijados en la cabecera.</span>
         </section>
 
         <FeedbackBanner feedback={feedback} mode={mode} />

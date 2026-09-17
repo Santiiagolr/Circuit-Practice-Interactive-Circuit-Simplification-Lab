@@ -138,6 +138,34 @@ function handleKeyboardSelect(event, edgeId, onClick) {
   }
 }
 
+function handleCircuitCanvasClick(event, onSelect) {
+  const target = event.target;
+  if (target.closest && target.closest('[data-component-id]')) return;
+
+  let closest = null;
+  const components = event.currentTarget.querySelectorAll('[data-component-id]');
+  components.forEach((component) => {
+    const hitbox = component.querySelector('[data-component-hitbox]');
+    if (!hitbox) return;
+
+    const bounds = hitbox.getBoundingClientRect();
+    const distance = Math.hypot(
+      event.clientX - (bounds.left + bounds.width / 2),
+      event.clientY - (bounds.top + bounds.height / 2),
+    );
+    if (!closest || distance < closest.distance) {
+      closest = { id: component.getAttribute('data-component-id'), distance };
+    }
+  });
+
+  if (closest && closest.distance <= 28) {
+    onSelect(closest.id);
+    return;
+  }
+
+  onSelect(null);
+}
+
 const PARALLEL_LANE_GAP = 42;
 
 function compactPoints(points) {
@@ -315,6 +343,7 @@ function EdgeComponent({ edge, edges, x1, y1, x2, y2, isSelected, onClick, isMes
 
   return (
     <g
+      data-component-id={edge.id}
       className={'edge-component ' + (isSelected ? 'is-selected ' : '') + (isEquivalent ? 'is-equivalent edge-component--merge' : '')}
       role="button"
       tabIndex="0"
@@ -334,7 +363,8 @@ function EdgeComponent({ edge, edges, x1, y1, x2, y2, isSelected, onClick, isMes
         height={hitHeight}
         rx="14"
         fill="transparent"
-        pointerEvents="all"
+        data-component-hitbox="true"
+        pointerEvents="none"
         transform={'translate(' + geometry.centerX + ', ' + geometry.centerY + ') rotate(' + geometry.angle + ')'}
       />
       <path
@@ -459,17 +489,16 @@ export default function GridCircuitSVG({ nodes, edges, selectedIds, onSelect, is
   };
 
   return (
-    <div className="circuit-scroll">
+    <div className="circuit-scroll circuit-scroll--fit">
       <svg
         className="circuit-svg"
         width={layout.width}
         height={layout.height}
         viewBox={'0 0 ' + layout.width + ' ' + layout.height}
         preserveAspectRatio="xMidYMid meet"
-        style={{ minWidth: Math.max(450, Math.min(layout.width, 980)) + 'px' }}
         role="group"
         aria-label="Circuito avanzado interactivo"
-        onClick={() => onSelect(null)}
+        onClick={(event) => handleCircuitCanvasClick(event, onSelect)}
       >
         <SvgDefs prefix={prefix} />
         <rect width={layout.width} height={layout.height} fill={'url(#' + prefix + '-grid-major)'} pointerEvents="all" />
