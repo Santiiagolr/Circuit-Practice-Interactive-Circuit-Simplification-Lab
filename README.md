@@ -27,6 +27,9 @@ The challenge ends when the network is manually reduced to one equivalent compon
 - Short-circuit detection and visual dead-branch pruning after removing open switches.
 - Manual interaction: the student must select, reason, and execute every operation.
 - Visual feedback for selections, topology errors, successful combinations, and circuit state.
+- Three difficulty levels with different circuit sizes and branching density.
+- Persistent score, clean-solve streaks, best streak, and difficulty-based bonuses stored locally.
+- Optional illustrative current-flow animation for resistor exercises.
 - Responsive SVG rendering for desktop, tablet, and mobile screens.
 - Keyboard support for selecting components and operating the main controls.
 - No Delta-Star transformations.
@@ -84,15 +87,20 @@ The launcher source is available at `tools/CircuitPracticeLauncher/CircuitPracti
 | `npm run build` | Creates the optimized production build. |
 | `npm run preview` | Serves the production build locally. |
 | `npm run lint` | Runs Oxlint on the project. |
+| `npm run test:circuits` | Runs deterministic generation, solvability, diversity, and switch-deletion smoke tests. |
 
 ### How to play
 
 1. Choose the component type: resistor or capacitor.
 2. Choose Basic or Advanced mode.
-3. Select two or more components that can be reduced together.
-4. Decide whether they are connected in series or in parallel.
-5. If an open switch appears, select it and use **Remove (Open)**.
-6. Read the application feedback and continue until one equivalent component remains.
+3. Choose a difficulty level. Higher levels increase depth, branching, and the number of components.
+4. Select two or more components that can be reduced together.
+5. Decide whether they are connected in series or in parallel.
+6. If an open switch appears, select it and use **Remove (Open)**.
+7. Read the application feedback and continue until one equivalent component remains.
+
+Clean solutions build a streak and award a bonus. Any invalid operation resets the active streak,
+while the total score and best streak remain available after reloading the browser.
 
 The interface does not apply reductions on its own. Every operation requires an explicit user selection and passes through the corresponding validation.
 
@@ -138,6 +146,7 @@ Before publishing changes, run:
 ```bash
 npm run lint
 npm run build
+npm run test:circuits
 ```
 
 The build creates the `dist/` directory, which is excluded from version control by `.gitignore`.
@@ -166,6 +175,9 @@ El desafío termina cuando la red se reduce manualmente a un único componente e
 - Detección de cortocircuitos y poda visual de ramas muertas después de eliminar interruptores abiertos.
 - Interacción manual: el estudiante debe seleccionar, razonar y ejecutar cada operación.
 - Feedback visual para selección, errores topológicos, combinaciones exitosas y estado del circuito.
+- Tres niveles de dificultad con distinta cantidad de componentes y densidad de ramificaciones.
+- Puntos, racha de resoluciones limpias, mejor racha y bonus según dificultad, persistidos localmente.
+- Animación opcional e ilustrativa del flujo de corriente para ejercicios de resistencias.
 - Renderizado SVG responsive para escritorio, tablet y móvil.
 - Soporte de teclado para seleccionar componentes y operar los controles principales.
 - No utiliza transformaciones Delta-Estrella.
@@ -200,15 +212,20 @@ El código fuente del launcher está en `tools/CircuitPracticeLauncher/CircuitPr
 | `npm run build` | Genera la versión optimizada para producción. |
 | `npm run preview` | Sirve localmente la compilación de producción. |
 | `npm run lint` | Ejecuta Oxlint sobre el proyecto. |
+| `npm run test:circuits` | Ejecuta smoke tests deterministas de generación, reducibilidad, variedad y eliminación de interruptores. |
 
 ### Cómo se juega
 
 1. Elegí el tipo de componente: resistencia o capacitor.
 2. Elegí el modo Básico o Avanzado.
-3. Seleccioná dos o más componentes que puedan reducirse juntos.
-4. Indicá si están conectados en serie o en paralelo.
-5. Si aparece un interruptor abierto, seleccionálo y utilizá la acción **Eliminar (abierto)**.
-6. Leé el feedback de la aplicación y continuá hasta obtener un único componente equivalente.
+3. Elegí una dificultad. Los niveles altos aumentan la profundidad, las ramificaciones y la cantidad de componentes.
+4. Seleccioná dos o más componentes que puedan reducirse juntos.
+5. Indicá si están conectados en serie o en paralelo.
+6. Si aparece un interruptor abierto, seleccionálo y utilizá la acción **Eliminar (abierto)**.
+7. Leé el feedback de la aplicación y continuá hasta obtener un único componente equivalente.
+
+Las resoluciones limpias construyen una racha y otorgan un bonus. Cualquier operación inválida
+reinicia la racha activa, mientras que el puntaje total y la mejor racha permanecen al recargar el navegador.
 
 La interfaz no aplica reducciones por su cuenta: cada operación requiere una selección explícita del usuario y pasa por la validación correspondiente.
 
@@ -233,6 +250,7 @@ La lógica matemática y las validaciones topológicas viven en `src/lib/`. Los 
 ```bash
 npm run lint
 npm run build
+npm run test:circuits
 ```
 
 El build genera la carpeta `dist/`, que está excluida del control de versiones mediante `.gitignore`.

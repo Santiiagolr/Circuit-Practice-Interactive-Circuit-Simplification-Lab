@@ -1,9 +1,11 @@
-import React, { useCallback, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
+  Activity,
   ArrowRight,
   BookOpen,
   CheckCircle2,
   ChevronRight,
+  Flame,
   Grid3X3,
   Layers,
   Lightbulb,
@@ -15,10 +17,11 @@ import {
   Zap,
 } from 'lucide-react';
 import {
-  combineNodes,
+  DIFFICULTY_PRESETS,
   formatValue,
-  generateRandomCircuit,
-  relabelTree,
+  generateBasicExercise,
+  getTreeStats,
+  combineNodes,
   validateSelection,
 } from './lib/circuit';
 import {
@@ -30,6 +33,46 @@ import {
 } from './lib/graphCircuit';
 import CircuitSVG from './components/CircuitSVG';
 import GridCircuitSVG from './components/GridCircuitSVG';
+
+const PROGRESS_KEY = 'circuit-practice:progress:v1';
+const POINTS_BY_DIFFICULTY = {
+  guided: 10,
+  practice: 20,
+  challenge: 35,
+};
+
+const EMPTY_PROGRESS = {
+  score: 0,
+  streak: 0,
+  bestStreak: 0,
+  completed: 0,
+};
+const INITIAL_SEED = Date.now();
+
+function safeProgressValue(value) {
+  const numeric = Number(value);
+  return Number.isFinite(numeric) && numeric >= 0 ? Math.floor(numeric) : 0;
+}
+
+function readProgress() {
+  if (typeof window === 'undefined') return EMPTY_PROGRESS;
+
+  try {
+    const stored = JSON.parse(window.localStorage.getItem(PROGRESS_KEY) || '{}');
+    return {
+      score: safeProgressValue(stored.score),
+      streak: safeProgressValue(stored.streak),
+      bestStreak: safeProgressValue(stored.bestStreak),
+      completed: safeProgressValue(stored.completed),
+    };
+  } catch {
+    return EMPTY_PROGRESS;
+  }
+}
+
+function makeHistoryKey(mode, compType, difficulty, valueMode) {
+  return [mode, compType, difficulty, valueMode].join(':');
+}
 
 function FormulaPanel({ compType }) {
   const formulas = compType === 'R'
@@ -68,24 +111,30 @@ function FormulaPanel({ compType }) {
 
       <div className="formula-note">
         <Lightbulb size={16} />
-        <span>Primero identifica la conexión. Después elige la regla.</span>
+        <span>
+          Primero identifica la conexión. Después elige la regla. El flujo animado es
+          una guía visual y solo está disponible para resistencias.
+        </span>
       </div>
     </aside>
   );
 }
 
 const confettiPieces = Array.from({ length: 24 }, (_, index) => ({
-  left: `${(index * 37) % 101}%`,
-  top: `${(index * 19) % 38}%`,
-  delay: `${(index % 7) * 0.08}s`,
-  duration: `${1.2 + (index % 5) * 0.16}s`,
-  size: `${6 + (index % 4) * 2}px`,
+  left: ((index * 37) % 101) + '%',
+  top: ((index * 19) % 38) + '%',
+  delay: ((index % 7) * 0.08) + 's',
+  duration: (1.2 + (index % 5) * 0.16) + 's',
+  size: (6 + (index % 4) * 2) + 'px',
   shape: index % 3 === 0 ? '50%' : '3px',
   color: ['#37D6C0', '#FFB454', '#78A8FF', '#EF7770'][index % 4],
 }));
 
-function VictoryOverlay({ eqVal, compType, steps, onNext }) {
+function VictoryOverlay({ eqVal, compType, steps, reward, onNext }) {
   const value = compType === 'R' ? formatValue(eqVal, compType) : gFormatValue(eqVal, compType);
+  const cleanMessage = reward?.clean
+    ? 'Resolución limpia: la racha sigue creciendo.'
+    : 'Circuito resuelto. En el próximo intento podés recuperar la racha.';
 
   return (
     <div className="victory-overlay" role="dialog" aria-modal="true" aria-labelledby="victory-title">
@@ -112,10 +161,17 @@ function VictoryOverlay({ eqVal, compType, steps, onNext }) {
         <div className="victory-mark"><Trophy size={28} /></div>
         <span className="eyebrow">Medición final</span>
         <h2 id="victory-title">Circuito reducido</h2>
-        <p>Encontraste el componente equivalente en {steps} paso{steps === 1 ? '' : 's'}.</p>
+        <p>
+          Encontraste el componente equivalente en {steps} paso{steps === 1 ? '' : 's'}.
+          {' '}{cleanMessage}
+        </p>
         <div className="equivalent-readout">
           <span>{compType === 'R' ? 'Resistencia' : 'Capacitancia'} equivalente</span>
           <strong>{value}</strong>
+        </div>
+        <div className="victory-reward" aria-label="Recompensa del ejercicio">
+          <span>+{reward?.points || 0} puntos</span>
+          <span><Flame size={14} /> Racha {reward?.streak || 0}</span>
         </div>
         <button className="button button--primary button--large" onClick={onNext}>
           Medir otro circuito <ArrowRight size={18} />
@@ -134,7 +190,11 @@ function FeedbackBanner({ feedback, mode }) {
 
   return (
     <div
-      className={`feedback-banner ${isError ? 'feedback-banner--error' : ''} ${isSuccess ? 'feedback-banner--success' : ''}`}
+      className={
+        'feedback-banner'
+        + (isError ? ' feedback-banner--error' : '')
+        + (isSuccess ? ' feedback-banner--success' : '')
+      }
       key={feedback?.key || 'idle'}
       role={isError ? 'alert' : 'status'}
       aria-live="polite"
@@ -148,51 +208,159 @@ function FeedbackBanner({ feedback, mode }) {
 }
 
 function App() {
+  const feedbackKeyRef = useRef(0);
+  const historyRef = useRef({});
+  const historyInitializedRef = useRef(false);
+
   const [mode, setMode] = useState('basic');
   const [compType, setCompType] = useState('R');
+  const [difficulty, setDifficulty] = useState('guided');
   const [isMessy, setIsMessy] = useState(false);
   const [showFormulas, setShowFormulas] = useState(false);
+  const [showFlow, setShowFlow] = useState(true);
   const [valueMode, setValueMode] = useState('varied');
-  const [tree, setTree] = useState(() => relabelTree(generateRandomCircuit('R', 0, 3), 'R'));
-  const [graphNodes, setGraphNodes] = useState([]);
-  const [graphEdges, setGraphEdges] = useState([]);
+  const [basicExercise, setBasicExercise] = useState(() => (
+    generateBasicExercise('R', {
+      difficulty: 'guided',
+      seed: INITIAL_SEED,
+      valueMode: 'varied',
+    })
+  ));
+  const [graphExercise, setGraphExercise] = useState(() => (
+    generateGridCircuit('R', 'varied', {
+      difficulty: 'guided',
+      seed: INITIAL_SEED + 1,
+    })
+  ));
   const [selectedIds, setSelectedIds] = useState([]);
   const [feedback, setFeedback] = useState(null);
   const [steps, setSteps] = useState(0);
-  const [feedbackKey, setFeedbackKey] = useState(0);
+  const [mistakes, setMistakes] = useState(0);
+  const [exerciseHadMistake, setExerciseHadMistake] = useState(false);
+  const [currentSeed, setCurrentSeed] = useState(INITIAL_SEED);
+  const [reward, setReward] = useState(null);
+  const [progress, setProgress] = useState(readProgress);
 
-  const initCircuit = useCallback((targetMode = mode, targetType = compType, targetValueMode = valueMode) => {
-    setSelectedIds([]);
-    setFeedback(null);
-    setSteps(0);
+  const tree = basicExercise?.tree;
+  const graphNodes = graphExercise.nodes;
+  const graphEdges = graphExercise.edges;
+  const isSolved = feedback?.type === 'victory';
+  const eqVal = feedback?.val ?? 0;
+  const componentName = compType === 'R' ? 'Resistencias' : 'Capacitores';
+  const flowActive = showFlow && compType === 'R';
 
+  useEffect(() => {
+    window.localStorage.setItem(PROGRESS_KEY, JSON.stringify(progress));
+  }, [progress]);
+
+  useEffect(() => {
+    if (historyInitializedRef.current) return;
+
+    historyRef.current[makeHistoryKey('basic', 'R', 'guided', 'varied')] = [basicExercise.signature];
+    historyRef.current[makeHistoryKey('advanced', 'R', 'guided', 'varied')] = [graphExercise.signature];
+    historyInitializedRef.current = true;
+  }, [basicExercise.signature, graphExercise.signature]);
+
+  const publishFeedback = useCallback((type, text, val) => {
+    feedbackKeyRef.current += 1;
+    setFeedback({
+      type,
+      text,
+      val,
+      key: feedbackKeyRef.current,
+    });
+  }, []);
+
+  const rememberSignature = useCallback((targetMode, targetType, targetDifficulty, targetValueMode, signature) => {
+    const key = makeHistoryKey(targetMode, targetType, targetDifficulty, targetValueMode);
+    const recent = historyRef.current[key] || [];
+    historyRef.current[key] = recent.concat(signature).slice(-18);
+  }, []);
+
+  const createExercise = useCallback((
+    targetMode = mode,
+    targetType = compType,
+    targetDifficulty = difficulty,
+    targetValueMode = valueMode,
+    options = {},
+  ) => {
+    const nextSeed = currentSeed + 1;
+    const historyKey = makeHistoryKey(targetMode, targetType, targetDifficulty, targetValueMode);
+    const recentSignatures = historyRef.current[historyKey] || [];
     if (targetMode === 'basic') {
-      const nextTree = relabelTree(generateRandomCircuit(targetType, 0, 3), targetType);
-      setTree(nextTree);
-      return;
+      const nextExercise = generateBasicExercise(targetType, {
+        difficulty: targetDifficulty,
+        seed: nextSeed,
+        valueMode: targetValueMode,
+        recentSignatures,
+      });
+      setBasicExercise(nextExercise);
+      rememberSignature(
+        targetMode,
+        targetType,
+        targetDifficulty,
+        targetValueMode,
+        nextExercise.signature,
+      );
+    } else {
+      const nextExercise = generateGridCircuit(targetType, targetValueMode, {
+        difficulty: targetDifficulty,
+        seed: nextSeed,
+        recentSignatures,
+      });
+      setGraphExercise(nextExercise);
+      rememberSignature(
+        targetMode,
+        targetType,
+        targetDifficulty,
+        targetValueMode,
+        nextExercise.signature,
+      );
     }
 
-    const { nodes, edges } = generateGridCircuit(targetType, targetValueMode);
-    setGraphNodes(nodes);
-    setGraphEdges(edges);
-  }, [compType, mode, valueMode]);
+    setCurrentSeed(nextSeed);
+    setSelectedIds([]);
+    setFeedback(null);
+    setReward(null);
+    setSteps(0);
+    setMistakes(0);
+    setExerciseHadMistake(false);
+    setShowFlow((current) => targetType === 'R' ? current : false);
+
+    if (options.breakStreak !== false) {
+      setProgress((current) => ({ ...current, streak: 0 }));
+    }
+  }, [
+    compType,
+    difficulty,
+    mode,
+    currentSeed,
+    rememberSignature,
+    valueMode,
+  ]);
 
   const changeMode = useCallback((nextMode) => {
     setMode(nextMode);
-    initCircuit(nextMode, compType, valueMode);
-  }, [compType, initCircuit, valueMode]);
+    createExercise(nextMode, compType, difficulty, valueMode);
+  }, [compType, createExercise, difficulty, valueMode]);
 
   const changeComponentType = useCallback((nextType) => {
     setCompType(nextType);
-    initCircuit(mode, nextType, valueMode);
-  }, [initCircuit, mode, valueMode]);
+    createExercise(mode, nextType, difficulty, valueMode);
+  }, [createExercise, difficulty, mode, valueMode]);
+
+  const changeDifficulty = useCallback((nextDifficulty) => {
+    setDifficulty(nextDifficulty);
+    createExercise(mode, compType, nextDifficulty, valueMode);
+  }, [compType, createExercise, mode, valueMode]);
 
   const changeValueMode = useCallback((nextValueMode) => {
     setValueMode(nextValueMode);
-    initCircuit(mode, compType, nextValueMode);
-  }, [compType, initCircuit, mode]);
+    createExercise(mode, compType, difficulty, nextValueMode);
+  }, [compType, createExercise, difficulty, mode]);
 
   const handleSelect = useCallback((id) => {
+    if (isSolved) return;
     if (!id) {
       setSelectedIds([]);
       return;
@@ -201,17 +369,43 @@ function App() {
     setSelectedIds((current) => (
       current.includes(id)
         ? current.filter((item) => item !== id)
-        : [...current, id]
+        : current.concat(id)
     ));
     setFeedback(null);
-  }, []);
+  }, [isSolved]);
 
   const setError = useCallback((message) => {
-    setFeedback({ type: 'error', text: message, key: feedbackKey + 1 });
-    setFeedbackKey((key) => key + 1);
-  }, [feedbackKey]);
+    setExerciseHadMistake(true);
+    setMistakes((current) => current + 1);
+    setProgress((current) => ({ ...current, streak: 0 }));
+    publishFeedback('error', message);
+  }, [publishFeedback]);
+
+  const completeExercise = useCallback((value) => {
+    const clean = !exerciseHadMistake;
+    const nextStreak = clean ? progress.streak + 1 : 0;
+    const basePoints = POINTS_BY_DIFFICULTY[difficulty] || POINTS_BY_DIFFICULTY.guided;
+    const streakBonus = clean ? Math.min(30, Math.max(0, (nextStreak - 1) * 5)) : 0;
+    const earnedPoints = basePoints + streakBonus;
+
+    setProgress((current) => ({
+      ...current,
+      score: current.score + earnedPoints,
+      streak: nextStreak,
+      bestStreak: Math.max(current.bestStreak, nextStreak),
+      completed: current.completed + 1,
+    }));
+    setReward({
+      points: earnedPoints,
+      streak: nextStreak,
+      clean,
+    });
+    publishFeedback('victory', 'Medición correcta. El equivalente quedó conectado a la batería.', value);
+  }, [difficulty, exerciseHadMistake, progress, publishFeedback]);
 
   const handleCombine = useCallback((action) => {
+    if (isSolved) return;
+
     if (mode === 'basic') {
       const result = validateSelection(tree, selectedIds, action);
       if (!result.valid) {
@@ -220,19 +414,25 @@ function App() {
       }
 
       const nextTree = combineNodes(tree, selectedIds, action, compType);
-      setTree(nextTree);
+      setBasicExercise((current) => ({ ...current, tree: nextTree }));
       setSelectedIds([]);
-      setSteps((value) => value + 1);
+      const nextStepCount = steps + 1;
+      setSteps(nextStepCount);
+
       if (nextTree.type === 'leaf') {
-        setFeedback({ type: 'victory', val: nextTree.val });
+        completeExercise(nextTree.val);
       } else {
-        setFeedback({
-          type: 'success',
-          text: `Combinación correcta: conexión en ${action === 'series' ? 'serie' : 'paralelo'}.`,
-          key: feedbackKey + 1,
-        });
-        setFeedbackKey((key) => key + 1);
+        publishFeedback(
+          'success',
+          'Combinación correcta: conexión en ' + (action === 'series' ? 'serie.' : 'paralelo.'),
+        );
       }
+      return;
+    }
+
+    const selectedEdges = graphEdges.filter((edge) => selectedIds.includes(edge.id));
+    if (selectedEdges.some((edge) => edge.compType === 'S' && edge.switchState === 'open')) {
+      setError('Un interruptor abierto equivale a una rama desconectada. Seleccionalo solo y pulsa "Eliminar abierto".');
       return;
     }
 
@@ -243,42 +443,77 @@ function App() {
     }
 
     const nextGraph = combineGraphEdges(graphNodes, graphEdges, selectedIds, action, compType);
-    setGraphNodes(nextGraph.nodes);
-    setGraphEdges(nextGraph.edges);
+    setGraphExercise((current) => ({
+      ...current,
+      nodes: nextGraph.nodes,
+      edges: nextGraph.edges,
+    }));
     setSelectedIds([]);
-    setSteps((value) => value + 1);
+    const nextStepCount = steps + 1;
+    setSteps(nextStepCount);
+
     if (nextGraph.edges.length === 1) {
-      setFeedback({ type: 'victory', val: nextGraph.edges[0].val });
+      completeExercise(nextGraph.edges[0].val);
     } else {
-      setFeedback({
-        type: 'success',
-        text: `Combinación correcta: conexión en ${action === 'series' ? 'serie' : 'paralelo'}.`,
-        key: feedbackKey + 1,
-      });
-      setFeedbackKey((key) => key + 1);
+      publishFeedback(
+        'success',
+        'Combinación correcta: conexión en ' + (action === 'series' ? 'serie.' : 'paralelo.'),
+      );
     }
-  }, [compType, feedbackKey, graphEdges, graphNodes, mode, selectedIds, setError, tree]);
+  }, [
+    compType,
+    completeExercise,
+    graphEdges,
+    graphNodes,
+    isSolved,
+    mode,
+    publishFeedback,
+    selectedIds,
+    setError,
+    steps,
+    tree,
+  ]);
 
   const handleDeleteSwitch = useCallback(() => {
-    if (selectedIds.length !== 1) return;
+    if (mode !== 'advanced' || selectedIds.length !== 1) {
+      setError('Selecciona un único interruptor abierto para eliminarlo.');
+      return;
+    }
+
+    const selectedSwitch = graphEdges.find((edge) => edge.id === selectedIds[0]);
+    if (!selectedSwitch || selectedSwitch.compType !== 'S' || selectedSwitch.switchState !== 'open') {
+      setError('Solo se pueden eliminar interruptores en estado abierto.');
+      return;
+    }
 
     const nextGraph = deleteGraphEdge(graphNodes, graphEdges, selectedIds[0]);
-    setGraphNodes(nextGraph.nodes);
-    setGraphEdges(nextGraph.edges);
+    setGraphExercise((current) => ({
+      ...current,
+      nodes: nextGraph.nodes,
+      edges: nextGraph.edges,
+    }));
     setSelectedIds([]);
-    setSteps((value) => value + 1);
+    const nextStepCount = steps + 1;
+    setSteps(nextStepCount);
 
     if (nextGraph.edges.length === 1) {
-      setFeedback({ type: 'victory', val: nextGraph.edges[0].val });
+      completeExercise(nextGraph.edges[0].val);
     } else {
-      setFeedback({
-        type: 'success',
-        text: 'Interruptor abierto eliminado. Las ramas muertas fueron podadas.',
-        key: feedbackKey + 1,
-      });
-      setFeedbackKey((key) => key + 1);
+      publishFeedback(
+        'success',
+        'Interruptor abierto eliminado. Las ramas muertas fueron podadas.',
+      );
     }
-  }, [feedbackKey, graphEdges, graphNodes, selectedIds]);
+  }, [
+    completeExercise,
+    graphEdges,
+    graphNodes,
+    mode,
+    publishFeedback,
+    selectedIds,
+    setError,
+    steps,
+  ]);
 
   const openSwitchSelected = useMemo(() => (
     mode === 'advanced'
@@ -290,9 +525,13 @@ function App() {
       ))
   ), [graphEdges, mode, selectedIds]);
 
-  const isSolved = feedback?.type === 'victory';
-  const eqVal = feedback?.val ?? 0;
-  const componentName = compType === 'R' ? 'Resistencias' : 'Capacitores';
+  const activeCount = mode === 'basic'
+    ? (tree ? getTreeStats(tree).leaves : 0)
+    : graphEdges.length;
+  const panelReadout = mode === 'basic'
+    ? activeCount + ' componentes activos · semilla ' + currentSeed
+    : graphEdges.length + ' elementos activos · semilla ' + currentSeed;
+  const difficultyLabel = DIFFICULTY_PRESETS[difficulty]?.label || 'Guiado';
 
   if (mode === 'basic' && !tree) return null;
 
@@ -342,6 +581,19 @@ function App() {
             </button>
           </div>
 
+          <div className="segmented-control segmented-control--difficulty" role="group" aria-label="Dificultad">
+            {Object.entries(DIFFICULTY_PRESETS).map(([key, preset]) => (
+              <button
+                key={key}
+                className={difficulty === key ? 'is-active' : ''}
+                aria-pressed={difficulty === key}
+                onClick={() => changeDifficulty(key)}
+              >
+                {preset.label}
+              </button>
+            ))}
+          </div>
+
           {mode === 'advanced' && (
             <div className="segmented-control segmented-control--values" role="group" aria-label="Distribución de valores">
               <button
@@ -362,14 +614,23 @@ function App() {
           )}
 
           <button
-            className={`topbar-tool ${showFormulas ? 'is-active' : ''}`}
+            className={'topbar-tool' + (showFormulas ? ' is-active' : '')}
             aria-pressed={showFormulas}
             onClick={() => setShowFormulas((open) => !open)}
           >
             <BookOpen size={16} /> Fórmulas
           </button>
           <button
-            className={`topbar-tool ${isMessy ? 'is-active is-warning' : ''}`}
+            className={'topbar-tool' + (flowActive ? ' is-active' : '')}
+            aria-pressed={flowActive}
+            disabled={compType !== 'R'}
+            title={compType === 'R' ? 'Mostrar flujo ilustrativo' : 'Disponible para resistencias'}
+            onClick={() => setShowFlow((current) => !current)}
+          >
+            <Activity size={16} /> Flujo
+          </button>
+          <button
+            className={'topbar-tool' + (isMessy ? ' is-active is-warning' : '')}
             aria-pressed={isMessy}
             onClick={() => setIsMessy((value) => !value)}
           >
@@ -381,11 +642,12 @@ function App() {
       <main className="workspace">
         <section className="exercise-heading">
           <div className="heading-copy">
-            <span className="eyebrow"><span className="eyebrow-pip" /> Práctica guiada</span>
+            <span className="eyebrow"><span className="eyebrow-pip" /> Práctica adaptativa</span>
             <h1>Simplifica el circuito sin perderte en la malla.</h1>
             <p>
               Lee la topología, selecciona los componentes vecinos y decide si forman
-              una conexión en serie o en paralelo.
+              una conexión en serie o en paralelo. En teléfono, desliza el área del
+              circuito si el ejercicio necesita más espacio.
             </p>
           </div>
 
@@ -395,11 +657,20 @@ function App() {
               <strong>{String(steps).padStart(2, '0')}</strong>
             </div>
             <div className="telemetry-cell">
-              <span className="telemetry-label">Selección</span>
-              <strong>{String(selectedIds.length).padStart(2, '0')}</strong>
+              <span className="telemetry-label">Fallos</span>
+              <strong>{String(mistakes).padStart(2, '0')}</strong>
+            </div>
+            <div className="telemetry-cell">
+              <span className="telemetry-label">Puntos</span>
+              <strong>{progress.score}</strong>
+            </div>
+            <div className="telemetry-cell telemetry-cell--streak">
+              <span className="telemetry-label">Racha</span>
+              <strong>{progress.streak}</strong>
+              <small>mejor {progress.bestStreak}</small>
             </div>
             <div className="telemetry-state">
-              <span className={`status-lamp ${isSolved ? 'is-solved' : ''}`} />
+              <span className={'status-lamp' + (isSolved ? ' is-solved' : '')} />
               <span>{isSolved ? 'Circuito medido' : 'Fuente activa · 12 V'}</span>
             </div>
           </div>
@@ -407,8 +678,14 @@ function App() {
 
         <section className="control-strip" aria-label="Acciones del ejercicio">
           <div className="instruction-copy">
-            <span className="instruction-label">{mode === 'basic' ? 'Modo básico' : 'Modo avanzado'}</span>
-            <span>{isSolved ? 'Resultado registrado.' : 'Selecciona dos o más elementos para habilitar una regla.'}</span>
+            <span className="instruction-label">
+              {mode === 'basic' ? 'Modo básico' : 'Modo avanzado'} · {difficultyLabel}
+            </span>
+            <span>
+              {isSolved
+                ? 'Resultado registrado.'
+                : 'Selecciona dos o más elementos para habilitar una regla.'}
+            </span>
           </div>
 
           <div className="action-group">
@@ -431,7 +708,7 @@ function App() {
                 <XCircle size={17} /> Eliminar abierto
               </button>
             )}
-            <button className="button button--quiet" onClick={() => initCircuit()}>
+            <button className="button button--quiet" onClick={() => createExercise()}>
               <RefreshCw size={16} /> Nuevo circuito
             </button>
           </div>
@@ -440,15 +717,15 @@ function App() {
         <FeedbackBanner feedback={feedback} mode={mode} />
 
         <section className="workbench-grid">
-          <section className="circuit-panel" aria-label={`Circuito de ${componentName.toLowerCase()}`}>
+          <section className="circuit-panel" aria-label={'Circuito de ' + componentName.toLowerCase()}>
             <div className="panel-heading">
               <div>
                 <span className="eyebrow">Mesa de trabajo</span>
                 <h2>{mode === 'basic' ? 'Reducción por bloques' : 'Lectura topológica'}</h2>
               </div>
-              <div className="panel-readout">
+              <div className="panel-readout" title={panelReadout}>
                 <span className="readout-dot" />
-                {mode === 'basic' ? 'Árbol de conexiones' : `${graphEdges.length} elementos activos`}
+                {panelReadout}
               </div>
             </div>
 
@@ -459,6 +736,7 @@ function App() {
                   selectedIds={selectedIds}
                   onSelect={handleSelect}
                   isMessy={isMessy}
+                  showFlow={flowActive}
                 />
               )}
               {mode === 'advanced' && (
@@ -468,6 +746,7 @@ function App() {
                   selectedIds={selectedIds}
                   onSelect={handleSelect}
                   isMessy={isMessy}
+                  showFlow={flowActive}
                 />
               )}
               {isSolved && (
@@ -475,7 +754,8 @@ function App() {
                   eqVal={eqVal}
                   compType={compType}
                   steps={steps}
-                  onNext={() => initCircuit()}
+                  reward={reward}
+                  onNext={() => createExercise(mode, compType, difficulty, valueMode, { breakStreak: false })}
                 />
               )}
             </div>
@@ -495,7 +775,7 @@ function App() {
       <footer className="app-footer">
         <span>Electricidad y magnetismo</span>
         <span className="footer-separator" />
-        <span>Piensa la conexión antes de combinar.</span>
+        <span>{progress.completed} circuitos completados · Piensa la conexión antes de combinar.</span>
       </footer>
     </div>
   );

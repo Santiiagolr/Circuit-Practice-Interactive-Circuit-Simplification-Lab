@@ -1,10 +1,10 @@
 import React, { useId, useMemo } from 'react';
 import { formatValue } from '../lib/circuit';
 
-const COMP_W = 96;
-const COMP_H = 54;
-const WIRE_EXT = 30;
-const BRANCH_GAP = 52;
+const COMP_W = 78;
+const COMP_H = 44;
+const WIRE_EXT = 24;
+const BRANCH_GAP = 36;
 const COLORS = {
   wire: '#526B80',
   ink: '#183047',
@@ -15,10 +15,10 @@ const COLORS = {
   cable: '#68849A',
 };
 
-function seededRandom(seedStr) {
+function seededRandom(seed) {
   let hash = 0xdeadbeef;
-  for (let index = 0; index < seedStr.length; index += 1) {
-    hash = Math.imul(hash ^ seedStr.charCodeAt(index), 2654435761);
+  for (let index = 0; index < seed.length; index += 1) {
+    hash = Math.imul(hash ^ seed.charCodeAt(index), 2654435761);
   }
   return ((hash ^ (hash >>> 16)) >>> 0) / 4294967296;
 }
@@ -34,17 +34,17 @@ function getSymbolColor({ compType, isSelected, isEquivalent }) {
 function SvgDefs({ prefix }) {
   return (
     <defs>
-      <filter id={`${prefix}-selected`} x="-40%" y="-40%" width="180%" height="180%">
+      <filter id={prefix + '-selected'} x="-40%" y="-40%" width="180%" height="180%">
         <feDropShadow dx="0" dy="0" stdDeviation="4" floodColor={COLORS.selected} floodOpacity="0.7" />
       </filter>
-      <filter id={`${prefix}-equivalent`} x="-40%" y="-40%" width="180%" height="180%">
+      <filter id={prefix + '-equivalent'} x="-40%" y="-40%" width="180%" height="180%">
         <feDropShadow dx="0" dy="0" stdDeviation="4" floodColor={COLORS.equivalent} floodOpacity="0.65" />
       </filter>
-      <pattern id={`${prefix}-grid`} width="24" height="24" patternUnits="userSpaceOnUse">
+      <pattern id={prefix + '-grid'} width="24" height="24" patternUnits="userSpaceOnUse">
         <path d="M 24 0 L 0 0 0 24" fill="none" stroke="#B8CBD5" strokeWidth="0.55" opacity="0.55" />
       </pattern>
-      <pattern id={`${prefix}-grid-major`} width="120" height="120" patternUnits="userSpaceOnUse">
-        <rect width="120" height="120" fill={`url(#${prefix}-grid)`} />
+      <pattern id={prefix + '-grid-major'} width="120" height="120" patternUnits="userSpaceOnUse">
+        <rect width="120" height="120" fill={'url(#' + prefix + '-grid)'} />
         <path d="M 120 0 L 0 0 0 120" fill="none" stroke="#8FA9B7" strokeWidth="0.75" opacity="0.5" />
       </pattern>
     </defs>
@@ -52,28 +52,28 @@ function SvgDefs({ prefix }) {
 }
 
 function ResistorSymbol({ w, h, color }) {
-  const wireLength = 16;
+  const wireLength = 12;
   const zigzagWidth = w - wireLength * 2;
   const centerY = h / 2;
-  const amplitude = 8;
-  const peaks = 6;
+  const amplitude = 6;
+  const peaks = 5;
   const segmentWidth = zigzagWidth / peaks;
-  let points = `${0},${centerY} ${wireLength},${centerY}`;
+  let points = '0,' + centerY + ' ' + wireLength + ',' + centerY;
 
   for (let index = 0; index < peaks; index += 1) {
     const xOffset = wireLength + segmentWidth * index;
     const direction = index % 2 === 0 ? -1 : 1;
-    points += ` ${xOffset + segmentWidth / 2},${centerY + direction * amplitude}`;
-    points += ` ${xOffset + segmentWidth},${centerY}`;
+    points += ' ' + (xOffset + segmentWidth / 2) + ',' + (centerY + direction * amplitude);
+    points += ' ' + (xOffset + segmentWidth) + ',' + centerY;
   }
-  points += ` ${w},${centerY}`;
+  points += ' ' + w + ',' + centerY;
 
   return (
     <polyline
       points={points}
       fill="none"
       stroke={color}
-      strokeWidth="3"
+      strokeWidth="2.5"
       strokeLinejoin="round"
       strokeLinecap="round"
       vectorEffect="non-scaling-stroke"
@@ -84,38 +84,32 @@ function ResistorSymbol({ w, h, color }) {
 
 function CapacitorSymbol({ w, h, color }) {
   const centerY = h / 2;
-  const plateHeight = 20;
-  const gap = 10;
+  const plateHeight = 17;
+  const gap = 8;
   const centerX = w / 2;
-  const strokeWidth = 3;
 
   return (
     <g pointerEvents="none">
-      <line x1="0" y1={centerY} x2={centerX - gap / 2} y2={centerY} stroke={color} strokeWidth={strokeWidth} strokeLinecap="round" vectorEffect="non-scaling-stroke" />
-      <line x1={centerX - gap / 2} y1={centerY - plateHeight / 2} x2={centerX - gap / 2} y2={centerY + plateHeight / 2} stroke={color} strokeWidth="3.5" strokeLinecap="round" vectorEffect="non-scaling-stroke" />
-      <line x1={centerX + gap / 2} y1={centerY - plateHeight / 2} x2={centerX + gap / 2} y2={centerY + plateHeight / 2} stroke={color} strokeWidth="3.5" strokeLinecap="round" vectorEffect="non-scaling-stroke" />
-      <line x1={centerX + gap / 2} y1={centerY} x2={w} y2={centerY} stroke={color} strokeWidth={strokeWidth} strokeLinecap="round" vectorEffect="non-scaling-stroke" />
+      <line x1="0" y1={centerY} x2={centerX - gap / 2} y2={centerY} stroke={color} strokeWidth="2.5" strokeLinecap="round" vectorEffect="non-scaling-stroke" />
+      <line x1={centerX - gap / 2} y1={centerY - plateHeight / 2} x2={centerX - gap / 2} y2={centerY + plateHeight / 2} stroke={color} strokeWidth="3" strokeLinecap="round" vectorEffect="non-scaling-stroke" />
+      <line x1={centerX + gap / 2} y1={centerY - plateHeight / 2} x2={centerX + gap / 2} y2={centerY + plateHeight / 2} stroke={color} strokeWidth="3" strokeLinecap="round" vectorEffect="non-scaling-stroke" />
+      <line x1={centerX + gap / 2} y1={centerY} x2={w} y2={centerY} stroke={color} strokeWidth="2.5" strokeLinecap="round" vectorEffect="non-scaling-stroke" />
     </g>
   );
 }
 
 function measureTree(node, isMessy) {
   if (node.type === 'leaf') {
-    return {
-      ...node,
-      w: COMP_W,
-      h: COMP_H,
-      offsetY: isMessy ? seededRandom(`${node.id}-offset-y`) * 24 - 12 : 0,
-    };
+    return { ...node, w: COMP_W, h: COMP_H };
   }
 
   const children = node.children.map((child) => measureTree(child, isMessy));
   const gaps = children.slice(0, -1).map((child, index) => {
-    const suffix = `${child.id}-${index}`;
+    const suffix = child.id + '-' + index;
     if (node.type === 'parallel') {
-      return isMessy ? seededRandom(`${suffix}-parallel-gap`) * 18 + BRANCH_GAP : BRANCH_GAP;
+      return isMessy ? seededRandom(suffix + '-parallel-gap') * 18 + BRANCH_GAP : BRANCH_GAP;
     }
-    return isMessy ? seededRandom(`${suffix}-series-gap`) * 18 + 34 : 40;
+    return isMessy ? seededRandom(suffix + '-series-gap') * 18 + 34 : 40;
   });
   const totalGaps = gaps.reduce((sum, gap) => sum + gap, 0);
 
@@ -138,36 +132,65 @@ function measureTree(node, isMessy) {
   };
 }
 
-function Wire({ x1, y1, x2, y2, isMessy, seed, color = COLORS.wire, className = '' }) {
+function Wire({ x1, y1, x2, y2, isMessy, seed, color = COLORS.wire, showFlow = false, flowReverse = false }) {
+  const flowClassName = 'flow-trace' + (flowReverse ? ' flow-trace--reverse' : '');
+
   if (isMessy && seed) {
     const midX = (x1 + x2) / 2;
     const midY = (y1 + y2) / 2;
-    const controlX = midX + seededRandom(`${seed}-x`) * 12 - 6;
-    const controlY = midY + seededRandom(`${seed}-y`) * 12 - 6;
+    const controlX = midX + seededRandom(seed + '-x') * 12 - 6;
+    const controlY = midY + seededRandom(seed + '-y') * 12 - 6;
+    const d = 'M ' + x1 + ' ' + y1 + ' Q ' + controlX + ' ' + controlY + ' ' + x2 + ' ' + y2;
     return (
-      <path
-        className={className}
-        d={`M ${x1} ${y1} Q ${controlX} ${controlY} ${x2} ${y2}`}
-        fill="none"
-        stroke={color}
-        strokeWidth="2.7"
-        strokeLinecap="round"
-        vectorEffect="non-scaling-stroke"
-        pointerEvents="none"
-      />
+      <g pointerEvents="none">
+        <path
+          d={d}
+          fill="none"
+          stroke={color}
+          strokeWidth="2.5"
+          strokeLinecap="round"
+          vectorEffect="non-scaling-stroke"
+        />
+        {showFlow && <path className={flowClassName} d={d} fill="none" vectorEffect="non-scaling-stroke" />}
+      </g>
     );
   }
 
   return (
-    <line
-      className={className}
-      x1={x1}
-      y1={y1}
-      x2={x2}
-      y2={y2}
-      stroke={color}
-      strokeWidth="2.7"
-      strokeLinecap="round"
+    <g pointerEvents="none">
+      <line
+        x1={x1}
+        y1={y1}
+        x2={x2}
+        y2={y2}
+        stroke={color}
+        strokeWidth="2.5"
+        strokeLinecap="round"
+        vectorEffect="non-scaling-stroke"
+      />
+      {showFlow && <line className={flowClassName} x1={x1} y1={y1} x2={x2} y2={y2} vectorEffect="non-scaling-stroke" />}
+    </g>
+  );
+}
+
+function PositiveFlow({ width, centerY, batteryY, circuitRight }) {
+  return (
+    <path
+      className="flow-trace flow-trace--positive"
+      d={'M ' + (width / 2 + 18) + ' ' + batteryY + ' L ' + (width - 36) + ' ' + batteryY + ' L ' + (width - 36) + ' ' + centerY + ' L ' + circuitRight + ' ' + centerY}
+      fill="none"
+      vectorEffect="non-scaling-stroke"
+      pointerEvents="none"
+    />
+  );
+}
+
+function ReturnFlow({ centerY, batteryY, circuitLeft }) {
+  return (
+    <path
+      className="flow-trace"
+      d={'M ' + circuitLeft + ' ' + centerY + ' L 36 ' + centerY + ' L 36 ' + batteryY}
+      fill="none"
       vectorEffect="non-scaling-stroke"
       pointerEvents="none"
     />
@@ -180,7 +203,8 @@ function JunctionDot({ x, y, tone = COLORS.ink }) {
 
 function getNodeLabel(node) {
   if (node.compType === 'W') return 'Cable, cortocircuito';
-  return `${node.compType === 'R' ? 'Resistencia' : 'Capacitor'} ${node.label}, ${formatValue(node.val, node.compType)}`;
+  return (node.compType === 'R' ? 'Resistencia ' : 'Capacitor ')
+    + node.label + ', ' + formatValue(node.val, node.compType);
 }
 
 function handleKeyboardSelect(event, nodeId, onSelect) {
@@ -191,22 +215,21 @@ function handleKeyboardSelect(event, nodeId, onSelect) {
   }
 }
 
-function RenderNode({ node, x, y, selectedIds, onSelect, isMessy, filterIds }) {
+function RenderNode({ node, x, y, selectedIds, onSelect, isMessy, showFlow, filterIds }) {
   if (node.type === 'leaf') {
     const isSelected = selectedIds.includes(node.id);
     const isEquivalent = node.label === 'Eq';
     const color = getSymbolColor({ compType: node.compType, isSelected, isEquivalent });
-    const offsetY = node.offsetY || 0;
     const filter = isSelected
-      ? `url(#${filterIds.selected})`
+      ? 'url(#' + filterIds.selected + ')'
       : isEquivalent
-        ? `url(#${filterIds.equivalent})`
+        ? 'url(#' + filterIds.equivalent + ')'
         : undefined;
 
     return (
       <g
-        transform={`translate(${x}, ${y + offsetY})`}
-        className={`circuit-component ${isSelected ? 'is-selected' : ''} ${isEquivalent ? 'is-equivalent circuit-component--merge' : ''}`}
+        transform={'translate(' + x + ', ' + y + ')'}
+        className={'circuit-component ' + (isSelected ? 'is-selected ' : '') + (isEquivalent ? 'is-equivalent' : '')}
         role="button"
         tabIndex="0"
         aria-label={getNodeLabel(node)}
@@ -218,33 +241,35 @@ function RenderNode({ node, x, y, selectedIds, onSelect, isMessy, filterIds }) {
         onKeyDown={(event) => handleKeyboardSelect(event, node.id, onSelect)}
         filter={filter}
       >
-        <rect x="-10" y="-12" width={node.w + 20} height={node.h + 30} fill="transparent" pointerEvents="all" />
-        <rect
-          x="0"
-          y="0"
-          width={node.w}
-          height={node.h}
-          rx="18"
-          fill={isSelected ? '#E3FBF6' : isEquivalent ? '#FFF4DF' : '#FFFFFF'}
-          fillOpacity="0.94"
-          stroke={isSelected ? COLORS.selected : isEquivalent ? COLORS.equivalent : '#B9CBD5'}
-          strokeWidth={isSelected || isEquivalent ? '1.8' : '1'}
-          pointerEvents="none"
-        />
-        <rect x="-4" y="-4" width={node.w + 8} height={node.h + 8} rx="22" fill="none" stroke={color} strokeWidth="1.5" opacity={isSelected || isEquivalent ? 0.45 : 0} pointerEvents="none" />
-        {node.compType === 'W' ? (
-          <line x1="0" y1={node.h / 2} x2={node.w} y2={node.h / 2} stroke={color} strokeWidth="3" strokeLinecap="round" vectorEffect="non-scaling-stroke" pointerEvents="none" />
-        ) : node.compType === 'R' ? (
-          <ResistorSymbol w={node.w} h={node.h} color={color} />
-        ) : (
-          <CapacitorSymbol w={node.w} h={node.h} color={color} />
-        )}
-        <text x={node.w / 2} y="-11" textAnchor="middle" fontSize="12" fontWeight="700" fill={COLORS.ink} fontFamily="'Space Grotesk', sans-serif" pointerEvents="none">
-          {node.label}
-        </text>
-        <text x={node.w / 2} y={node.h + 18} textAnchor="middle" fontSize="10.5" fontWeight="600" fill={isSelected ? '#168F82' : '#60788B'} fontFamily="'IBM Plex Mono', monospace" pointerEvents="none">
-          {formatValue(node.val, node.compType)}
-        </text>
+        <g className={isEquivalent ? 'circuit-component--merge' : undefined}>
+          <rect x="-12" y="-16" width={node.w + 24} height={node.h + 34} rx="13" fill="transparent" pointerEvents="all" />
+          <rect
+            x="0"
+            y="0"
+            width={node.w}
+            height={node.h}
+            rx="13"
+            fill={isSelected ? '#E3FBF6' : isEquivalent ? '#FFF4DF' : '#FFFFFF'}
+            fillOpacity="0.94"
+            stroke={isSelected ? COLORS.selected : isEquivalent ? COLORS.equivalent : '#B9CBD5'}
+            strokeWidth={isSelected || isEquivalent ? '1.8' : '1'}
+            pointerEvents="none"
+          />
+          <rect x="-3" y="-3" width={node.w + 6} height={node.h + 6} rx="16" fill="none" stroke={color} strokeWidth="1.4" opacity={isSelected || isEquivalent ? 0.45 : 0} pointerEvents="none" />
+          {node.compType === 'W' ? (
+            <line x1="0" y1={node.h / 2} x2={node.w} y2={node.h / 2} stroke={color} strokeWidth="3" strokeLinecap="round" vectorEffect="non-scaling-stroke" pointerEvents="none" />
+          ) : node.compType === 'R' ? (
+            <ResistorSymbol w={node.w} h={node.h} color={color} />
+          ) : (
+            <CapacitorSymbol w={node.w} h={node.h} color={color} />
+          )}
+          <text x={node.w / 2} y="-9" textAnchor="middle" fontSize="10.5" fontWeight="700" fill={COLORS.ink} fontFamily="'Space Grotesk', sans-serif" pointerEvents="none">
+            {node.label}
+          </text>
+          <text x={node.w / 2} y={node.h + 15} textAnchor="middle" fontSize="9.5" fontWeight="600" fill={isSelected ? '#168F82' : '#60788B'} fontFamily="'IBM Plex Mono', monospace" pointerEvents="none">
+            {formatValue(node.val, node.compType)}
+          </text>
+        </g>
       </g>
     );
   }
@@ -253,17 +278,16 @@ function RenderNode({ node, x, y, selectedIds, onSelect, isMessy, filterIds }) {
     const centerY = y + node.h / 2;
     const positionedChildren = node.children.reduce((items, child, index) => {
       const previous = items[items.length - 1];
-      const childX = previous
-        ? previous.childX + previous.child.w + previous.gapAfter
-        : x;
+      const childX = previous ? previous.childX + previous.child.w + previous.gapAfter : x;
       const childY = centerY - child.h / 2;
-      const childPortY = childY + child.h / 2 + (child.type === 'leaf' ? child.offsetY || 0 : 0);
+      const childPortY = childY + child.h / 2;
+
       return [...items, {
         child,
         childX,
         childY,
         childPortY,
-        previousPortY: previous?.childPortY ?? centerY,
+        previousPortY: previous ? previous.childPortY : centerY,
         gapBefore: node.gaps[index - 1] || 0,
         gapAfter: node.gaps[index] || 0,
       }];
@@ -271,47 +295,45 @@ function RenderNode({ node, x, y, selectedIds, onSelect, isMessy, filterIds }) {
 
     return (
       <g>
-        {positionedChildren.map(({ child, childX, childY, childPortY, previousPortY, gapBefore }, index) => {
-          const element = (
-            <React.Fragment key={child.id}>
-              {index > 0 && (
-                <Wire
-                  x1={childX - gapBefore}
-                  y1={previousPortY}
-                  x2={childX}
-                  y2={childPortY}
-                  isMessy={isMessy}
-                  seed={`${child.id}-series-wire`}
-                />
-              )}
-              <RenderNode
-                node={child}
-                x={childX}
-                y={childY}
-                selectedIds={selectedIds}
-                onSelect={onSelect}
+        {positionedChildren.map(({ child, childX, childY, childPortY, previousPortY, gapBefore }, index) => (
+          <React.Fragment key={child.id}>
+            {index > 0 && (
+              <Wire
+                x1={childX - gapBefore}
+                y1={previousPortY}
+                x2={childX}
+                y2={childPortY}
                 isMessy={isMessy}
-                filterIds={filterIds}
+                seed={child.id + '-series-wire'}
+                showFlow={showFlow}
+                flowReverse
               />
-            </React.Fragment>
-          );
-          return element;
-        })}
+            )}
+            <RenderNode
+              node={child}
+              x={childX}
+              y={childY}
+              selectedIds={selectedIds}
+              onSelect={onSelect}
+              isMessy={isMessy}
+              showFlow={showFlow}
+              filterIds={filterIds}
+            />
+          </React.Fragment>
+        ))}
       </g>
     );
   }
 
   if (node.type === 'parallel') {
     const centerX = x + node.w / 2;
-    const connectionYs = [];
     const positionedChildren = node.children.reduce((items, child, index) => {
       const previous = items[items.length - 1];
-      const childY = previous
-        ? previous.childY + previous.child.h + previous.gapAfter
-        : y;
-      const offsetX = isMessy ? seededRandom(`${child.id}-parallel-offset`) * 14 - 7 : 0;
+      const childY = previous ? previous.childY + previous.child.h + previous.gapAfter : y;
+      const offsetX = isMessy ? seededRandom(child.id + '-parallel-offset') * 14 - 7 : 0;
       const childX = centerX - child.w / 2 + offsetX;
-      const childPortY = childY + child.h / 2 + (child.type === 'leaf' ? child.offsetY || 0 : 0);
+      const childPortY = childY + child.h / 2;
+
       return [...items, {
         child,
         childX,
@@ -320,41 +342,34 @@ function RenderNode({ node, x, y, selectedIds, onSelect, isMessy, filterIds }) {
         gapAfter: node.gaps[index] || 0,
       }];
     }, []);
-
-    const branchElements = positionedChildren.map(({ child, childX, childY, childPortY }) => {
-      connectionYs.push(childPortY);
-      const element = (
-        <React.Fragment key={child.id}>
-          <Wire x1={x} y1={childPortY} x2={childX} y2={childPortY} isMessy={isMessy} seed={`${child.id}-parallel-left`} />
-          <Wire x1={childX + child.w} y1={childPortY} x2={x + node.w} y2={childPortY} isMessy={isMessy} seed={`${child.id}-parallel-right`} />
-          <RenderNode
-            node={child}
-            x={childX}
-            y={childY}
-            selectedIds={selectedIds}
-            onSelect={onSelect}
-            isMessy={isMessy}
-            filterIds={filterIds}
-          />
-        </React.Fragment>
-      );
-      return element;
-    });
-
-    const topY = connectionYs[0];
-    const bottomY = connectionYs[connectionYs.length - 1];
+    const connectionYs = positionedChildren.map((item) => item.childPortY);
 
     return (
       <g>
-        <Wire x1={x} y1={topY} x2={x} y2={bottomY} isMessy={isMessy} seed={`${node.id}-parallel-bus-left`} />
-        <Wire x1={x + node.w} y1={topY} x2={x + node.w} y2={bottomY} isMessy={isMessy} seed={`${node.id}-parallel-bus-right`} />
+        <Wire x1={x} y1={connectionYs[0]} x2={x} y2={connectionYs[connectionYs.length - 1]} isMessy={isMessy} seed={node.id + '-parallel-bus-left'} />
+        <Wire x1={x + node.w} y1={connectionYs[0]} x2={x + node.w} y2={connectionYs[connectionYs.length - 1]} isMessy={isMessy} seed={node.id + '-parallel-bus-right'} />
         {connectionYs.map((connectionY, index) => (
-          <React.Fragment key={`${node.id}-junction-${index}`}>
+          <React.Fragment key={node.id + '-junction-' + index}>
             <JunctionDot x={x} y={connectionY} />
             <JunctionDot x={x + node.w} y={connectionY} />
           </React.Fragment>
         ))}
-        {branchElements}
+        {positionedChildren.map(({ child, childX, childY, childPortY }) => (
+          <React.Fragment key={child.id}>
+            <Wire x1={x} y1={childPortY} x2={childX} y2={childPortY} isMessy={isMessy} seed={child.id + '-parallel-left'} showFlow={showFlow} flowReverse />
+            <Wire x1={childX + child.w} y1={childPortY} x2={x + node.w} y2={childPortY} isMessy={isMessy} seed={child.id + '-parallel-right'} showFlow={showFlow} flowReverse />
+            <RenderNode
+              node={child}
+              x={childX}
+              y={childY}
+              selectedIds={selectedIds}
+              onSelect={onSelect}
+              isMessy={isMessy}
+              showFlow={showFlow}
+              filterIds={filterIds}
+            />
+          </React.Fragment>
+        ))}
       </g>
     );
   }
@@ -364,7 +379,7 @@ function RenderNode({ node, x, y, selectedIds, onSelect, isMessy, filterIds }) {
 
 function BatterySymbol({ x, y }) {
   return (
-    <g transform={`translate(${x}, ${y})`} pointerEvents="none">
+    <g transform={'translate(' + x + ', ' + y + ')'} pointerEvents="none">
       <line x1="-8" y1="-15" x2="-8" y2="15" stroke="#39546A" strokeWidth="5" strokeLinecap="round" vectorEffect="non-scaling-stroke" />
       <line x1="8" y1="-25" x2="8" y2="25" stroke="#183047" strokeWidth="3" strokeLinecap="round" vectorEffect="non-scaling-stroke" />
       <text x="-24" y="1" textAnchor="middle" dominantBaseline="middle" fontSize="15" fontWeight="800" fill="#39546A" fontFamily="'Space Grotesk', sans-serif">−</text>
@@ -374,18 +389,18 @@ function BatterySymbol({ x, y }) {
   );
 }
 
-export default function CircuitSVG({ tree, selectedIds, onSelect, isMessy }) {
+export default function CircuitSVG({ tree, selectedIds, onSelect, isMessy, showFlow = false }) {
   const generatedId = useId();
-  const prefix = `basic-${generatedId.replace(/[^a-zA-Z0-9_-]/g, '')}`;
+  const prefix = 'basic-' + generatedId.replace(/[^a-zA-Z0-9_-]/g, '');
   const measured = useMemo(() => measureTree(tree, isMessy), [isMessy, tree]);
-  const padding = 108;
+  const padding = 74;
   const width = measured.w + padding * 2;
-  const height = measured.h + padding * 2 + 112;
+  const height = measured.h + padding * 2 + 76;
   const centerY = padding + measured.h / 2;
-  const batteryY = height - 66;
+  const batteryY = height - 48;
   const filterIds = {
-    selected: `${prefix}-selected`,
-    equivalent: `${prefix}-equivalent`,
+    selected: prefix + '-selected',
+    equivalent: prefix + '-equivalent',
   };
 
   return (
@@ -394,30 +409,30 @@ export default function CircuitSVG({ tree, selectedIds, onSelect, isMessy }) {
         className="circuit-svg"
         width={width}
         height={height}
-        viewBox={`0 0 ${width} ${height}`}
+        viewBox={'0 0 ' + width + ' ' + height}
         preserveAspectRatio="xMidYMid meet"
-        style={{ minWidth: `${Math.max(540, Math.min(width, 1100))}px` }}
+        style={{ minWidth: Math.max(480, Math.min(width, 980)) + 'px' }}
         role="group"
         aria-label="Circuito básico interactivo"
         onClick={() => onSelect(null)}
       >
         <SvgDefs prefix={prefix} />
-        <rect width={width} height={height} fill={`url(#${prefix}-grid-major)`} pointerEvents="all" />
-
+        <rect width={width} height={height} fill={'url(#' + prefix + '-grid-major)'} pointerEvents="all" />
         <g className="source-decoration" pointerEvents="none">
-          <Wire x1="36" y1={centerY} x2={padding} y2={centerY} isMessy={false} color={COLORS.wire} />
-          <Wire x1={padding + measured.w} y1={centerY} x2={width - 36} y2={centerY} isMessy={false} color={COLORS.wire} />
-          <Wire x1="36" y1={centerY} x2="36" y2={batteryY} isMessy={false} color={COLORS.wire} />
-          <Wire x1={width - 36} y1={centerY} x2={width - 36} y2={batteryY} isMessy={false} color={COLORS.wire} />
-          <Wire x1="36" y1={batteryY} x2={width / 2 - 18} y2={batteryY} isMessy={false} color={COLORS.wire} />
-          <Wire x1={width - 36} y1={batteryY} x2={width / 2 + 18} y2={batteryY} isMessy={false} color={COLORS.wire} />
+          <Wire x1="36" y1={centerY} x2={padding} y2={centerY} isMessy={false} />
+          <Wire x1={padding + measured.w} y1={centerY} x2={width - 36} y2={centerY} isMessy={false} />
+          <Wire x1="36" y1={centerY} x2="36" y2={batteryY} isMessy={false} />
+          <Wire x1={width - 36} y1={centerY} x2={width - 36} y2={batteryY} isMessy={false} />
+          <Wire x1="36" y1={batteryY} x2={width / 2 - 18} y2={batteryY} isMessy={false} />
+          <Wire x1={width - 36} y1={batteryY} x2={width / 2 + 18} y2={batteryY} isMessy={false} />
           <JunctionDot x="36" y={centerY} />
           <JunctionDot x={width - 36} y={centerY} />
           <JunctionDot x="36" y={batteryY} />
           <JunctionDot x={width - 36} y={batteryY} />
           <BatterySymbol x={width / 2} y={batteryY} />
+          {showFlow && <PositiveFlow width={width} centerY={centerY} batteryY={batteryY} circuitRight={padding + measured.w} />}
+          {showFlow && <ReturnFlow centerY={centerY} batteryY={batteryY} circuitLeft={padding} />}
         </g>
-
         <RenderNode
           node={measured}
           x={padding}
@@ -425,6 +440,7 @@ export default function CircuitSVG({ tree, selectedIds, onSelect, isMessy }) {
           selectedIds={selectedIds}
           onSelect={onSelect}
           isMessy={isMessy}
+          showFlow={showFlow}
           filterIds={filterIds}
         />
       </svg>

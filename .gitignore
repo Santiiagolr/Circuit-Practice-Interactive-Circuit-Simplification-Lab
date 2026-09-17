@@ -24,6 +24,7 @@ lerna-debug.log*
 coverage/
 playwright-report/
 test-results/
+.playwright-mcp/
 
 # Editores e IDEs
 .vscode/*
@@ -45,4 +46,3 @@ desktop.ini
 *.ntvs*
 *.njsproj
 *.sw?
-
