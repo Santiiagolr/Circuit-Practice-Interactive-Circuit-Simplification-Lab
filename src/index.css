@@ -625,6 +625,43 @@
   overflow: hidden;
 }
 
+.app-shell.is-workbench-fullscreen {
+  overflow: hidden;
+}
+
+.circuit-panel.is-fullscreen-workbench,
+.circuit-panel:fullscreen {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  display: flex;
+  width: auto;
+  max-width: none;
+  height: 100dvh;
+  min-height: 0;
+  flex-direction: column;
+  border: 0;
+  border-radius: 0;
+  background: var(--surface);
+}
+
+.circuit-panel.is-fullscreen-workbench .panel-heading,
+.circuit-panel:fullscreen .panel-heading {
+  flex: 0 0 auto;
+}
+
+.circuit-panel.is-fullscreen-workbench .circuit-stage,
+.circuit-panel:fullscreen .circuit-stage {
+  flex: 1 1 auto;
+  height: auto;
+  min-height: 0;
+}
+
+.circuit-panel.is-fullscreen-workbench .circuit-legend,
+.circuit-panel:fullscreen .circuit-legend {
+  flex: 0 0 auto;
+}
+
 .panel-heading {
   display: flex;
   align-items: flex-end;
@@ -632,6 +669,64 @@
   gap: 18px;
   padding: 20px 22px 16px;
   border-bottom: 1px solid #E7EEF2;
+}
+
+.panel-heading__tools {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 12px;
+  min-width: 0;
+}
+
+.panel-fullscreen-button {
+  display: inline-flex;
+  min-height: 36px;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  padding: 0 11px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  color: var(--muted);
+  background: #F8FBFC;
+  font-size: 0.72rem;
+  font-weight: 700;
+  white-space: nowrap;
+  transition: color 160ms ease, background 160ms ease, border-color 160ms ease, transform 160ms ease;
+}
+
+.panel-fullscreen-button:hover {
+  color: var(--ink);
+  border-color: #AFC4CF;
+  background: #FFFFFF;
+  transform: translateY(-1px);
+}
+
+.panel-fullscreen-button[aria-pressed='true'] {
+  color: #063B37;
+  border-color: transparent;
+  background: var(--signal);
+}
+
+.fullscreen-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  flex-wrap: wrap;
+  padding: 10px 18px;
+  border-bottom: 1px solid #E7EEF2;
+  background: #F7FAFB;
+}
+
+.fullscreen-toolbar .telemetry {
+  flex: 1 1 440px;
+  min-width: 0;
+  box-shadow: none;
+}
+
+.fullscreen-toolbar .action-group {
+  flex: 0 1 auto;
 }
 
 .panel-heading h2,
@@ -678,6 +773,10 @@
   overscroll-behavior: auto;
   scrollbar-color: #9CB4C1 transparent;
   scrollbar-width: thin;
+}
+
+.circuit-scroll--fit {
+  isolation: isolate;
 }
 
 .circuit-svg {
@@ -1233,6 +1332,16 @@ button:focus-visible {
     padding: 17px 16px 13px;
   }
 
+  .panel-heading__tools {
+    width: 100%;
+    justify-content: space-between;
+    gap: 8px;
+  }
+
+  .panel-fullscreen-button {
+    flex: 0 0 auto;
+  }
+
   .panel-readout {
     font-size: 0.61rem;
   }
@@ -1240,6 +1349,29 @@ button:focus-visible {
   .circuit-stage {
     height: clamp(430px, 78dvh, 720px);
     min-height: 430px;
+  }
+
+  .fullscreen-toolbar {
+    align-items: stretch;
+    padding: 9px 12px;
+  }
+
+  .fullscreen-toolbar .telemetry {
+    flex-basis: 100%;
+  }
+
+  .fullscreen-toolbar .action-group {
+    width: 100%;
+  }
+
+  .circuit-panel.is-fullscreen-workbench .panel-heading,
+  .circuit-panel:fullscreen .panel-heading {
+    padding-top: max(13px, env(safe-area-inset-top));
+  }
+
+  .circuit-panel.is-fullscreen-workbench .circuit-stage,
+  .circuit-panel:fullscreen .circuit-stage {
+    min-height: 0;
   }
 
   .circuit-scroll {

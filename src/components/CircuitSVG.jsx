@@ -1,10 +1,10 @@
 import React, { useId, useMemo } from 'react';
 import { formatValue } from '../lib/circuit';
 
-const COMP_W = 78;
-const COMP_H = 44;
+const COMP_W = 68;
+const COMP_H = 38;
 const WIRE_EXT = 24;
-const BRANCH_GAP = 36;
+const BRANCH_GAP = 30;
 const COLORS = {
   wire: '#526B80',
   ink: '#183047',
@@ -109,7 +109,7 @@ function measureTree(node, isMessy) {
     if (node.type === 'parallel') {
       return isMessy ? seededRandom(suffix + '-parallel-gap') * 18 + BRANCH_GAP : BRANCH_GAP;
     }
-    return isMessy ? seededRandom(suffix + '-series-gap') * 18 + 34 : 40;
+      return isMessy ? seededRandom(suffix + '-series-gap') * 18 + 30 : 34;
   });
   const totalGaps = gaps.reduce((sum, gap) => sum + gap, 0);
 

@@ -1,21 +1,22 @@
 import {
   calculateEquivalent,
   createSeededRandom,
-  generateId,
-  generateStructuredExercise,
-  getDifficultyConfig,
-  getTreeStats,
-  topologySignature,
   formatValue as formatCircuitValue,
+  generateId,
+  getDifficultyConfig,
+  topologySignature,
 } from './circuit.js';
 
 export function calcEq(compType, vals, mode) {
   return calculateEquivalent(compType, vals, mode);
 }
 
-export function formatValue(val, compType) {
+export function formatValue(val, compType, switchState) {
   if (compType === 'W') return 'Cable';
-  if (compType === 'S') return val === 0 ? 'Cerrado' : 'Abierto';
+  if (compType === 'S') {
+    if (switchState) return switchState === 'open' ? 'Abierto' : 'Cerrado';
+    return val === 0 ? 'Cerrado' : 'Abierto';
+  }
   return formatCircuitValue(val, compType);
 }
 
@@ -45,7 +46,7 @@ export function isSolvable(nodesIn, edgesIn) {
   while (changed && edges.length > 1) {
     changed = false;
 
-    // Two edges with the same endpoints are always a parallel reduction.
+    // Dos aristas con los mismos extremos siempre pueden reducirse en paralelo.
     for (let firstIndex = 0; firstIndex < edges.length && !changed; firstIndex += 1) {
       for (let secondIndex = firstIndex + 1; secondIndex < edges.length; secondIndex += 1) {
         if (edgesMatch(edges[firstIndex], edges[secondIndex])) {
@@ -57,7 +58,7 @@ export function isSolvable(nodesIn, edgesIn) {
     }
     if (changed) continue;
 
-    // A non-terminal node with exactly two distinct neighbours is a series reduction.
+    // Un nodo no terminal de grado 2 habilita una reducción en serie.
     for (const node of nodes) {
       if (node.terminal) continue;
       const connectedEdges = getNodeEdges(edges, node.id);
@@ -150,20 +151,132 @@ export function validateGraphSelection(nodes, edges, selectedIds, action) {
   return { valid: false, message: 'Acción no reconocida.' };
 }
 
+function compactPoints(points) {
+  return points.filter((point, index) => {
+    if (index === 0) return true;
+    const previous = points[index - 1];
+    return point.x !== previous.x || point.y !== previous.y;
+  });
+}
+
+function reverseRoute(route) {
+  return [...route].reverse().map((point) => ({ ...point }));
+}
+
+function getNodePosition(nodes, nodeId) {
+  const node = nodes.find((candidate) => candidate.id === nodeId);
+  return node ? { x: node.x, y: node.y } : null;
+}
+
+function orientRoute(edge, startId, endId, nodes) {
+  const route = Array.isArray(edge.route) ? compactPoints(edge.route) : [];
+  if (edge.from === startId && edge.to === endId) return route;
+  if (edge.from === endId && edge.to === startId) return reverseRoute(route);
+
+  const start = getNodePosition(nodes, startId);
+  const end = getNodePosition(nodes, endId);
+  return start && end ? [start, end] : route;
+}
+
+function routeLength(route) {
+  return route.reduce((total, point, index) => {
+    if (index === 0) return total;
+    return total + Math.hypot(point.x - route[index - 1].x, point.y - route[index - 1].y);
+  }, 0);
+}
+
+function routeBends(route) {
+  return Math.max(0, route.length - 2);
+}
+
+function routeCenter(route) {
+  const totals = route.reduce((result, point) => ({
+    x: result.x + point.x,
+    y: result.y + point.y,
+  }), { x: 0, y: 0 });
+  return route.length > 0
+    ? { x: totals.x / route.length, y: totals.y / route.length }
+    : { x: 0, y: 0 };
+}
+
+function chooseParallelRoute(selected) {
+  const centers = selected
+    .map((edge) => routeCenter(edge.route || []))
+    .filter((point) => Number.isFinite(point.x) && Number.isFinite(point.y));
+  const target = centers.reduce((result, point) => ({
+    x: result.x + point.x,
+    y: result.y + point.y,
+  }), { x: 0, y: 0 });
+  if (centers.length > 0) {
+    target.x /= centers.length;
+    target.y /= centers.length;
+  }
+
+  return selected
+    .map((edge) => {
+      const route = compactPoints(edge.route || []);
+      const center = routeCenter(route);
+      return {
+        route,
+        score: routeLength(route) + routeBends(route) * 2
+          + Math.hypot(center.x - target.x, center.y - target.y),
+      };
+    })
+    .sort((first, second) => first.score - second.score)[0]?.route || [];
+}
+
+function getRouteKind(route) {
+  const hasDiagonal = route.some((point, index) => {
+    if (index === 0) return false;
+    const previous = route[index - 1];
+    return point.x !== previous.x && point.y !== previous.y;
+  });
+  return hasDiagonal ? 'diagonal' : 'orthogonal';
+}
+
+function getRouteStyle(route) {
+  let longest = 0;
+  let style = 'horizontal';
+
+  for (let index = 1; index < route.length; index += 1) {
+    const previous = route[index - 1];
+    const current = route[index];
+    const length = Math.hypot(current.x - previous.x, current.y - previous.y);
+    if (length > longest) {
+      longest = length;
+      style = Math.abs(current.x - previous.x) >= Math.abs(current.y - previous.y)
+        ? 'horizontal'
+        : 'vertical';
+    }
+  }
+
+  return style;
+}
+
 export function combineGraphEdges(nodes, edges, selectedIds, action, compType) {
   const newNodes = nodes.map((node) => ({ ...node }));
-  let newEdges = edges.map((edge) => ({ ...edge }));
+  let newEdges = edges.map((edge) => ({
+    ...edge,
+    route: Array.isArray(edge.route) ? edge.route.map((point) => ({ ...point })) : edge.route,
+  }));
   const selected = newEdges.filter((edge) => selectedIds.includes(edge.id));
+
+  if (selected.length < 2) return { nodes, edges };
 
   if (action === 'parallel') {
     const equivalent = calcEq(compType, selected.map((edge) => edge.val), 'parallel');
     const isWire = (compType === 'R' && equivalent === 0)
       || (compType === 'C' && equivalent === Infinity);
     const kept = selected[0];
+    const mergedRoute = chooseParallelRoute(selected);
     kept.val = equivalent;
     kept.compType = isWire ? 'W' : compType;
     kept.label = isWire ? 'W' : 'Eq';
     kept.id = generateId();
+    kept.route = mergedRoute;
+    kept.routeKind = getRouteKind(mergedRoute);
+    kept.routeStyle = kept.routeKind === 'diagonal' ? 'diagonal' : getRouteStyle(mergedRoute);
+    kept.layoutRole = 'equivalent';
     const removeIds = selected.slice(1).map((edge) => edge.id);
     newEdges = newEdges.filter((edge) => !removeIds.includes(edge.id));
   } else if (action === 'series') {
@@ -171,13 +284,16 @@ export function combineGraphEdges(nodes, edges, selectedIds, action, compType) {
     const sharedNode = [first.from, first.to].find((nodeId) => (
       nodeId === second.from || nodeId === second.to
     ));
-    const firstEnd = otherEnd(first, sharedNode);
-    const secondEnd = otherEnd(second, sharedNode);
+    const firstEnd = sharedNode ? otherEnd(first, sharedNode) : null;
+    const secondEnd = sharedNode ? otherEnd(second, sharedNode) : null;
 
     if (!sharedNode || firstEnd === secondEnd) {
       return { nodes, edges };
     }
 
+    const firstRoute = orientRoute(first, firstEnd, sharedNode, newNodes);
+    const secondRoute = orientRoute(second, sharedNode, secondEnd, newNodes);
+    const mergedRoute = compactPoints(firstRoute.concat(secondRoute.slice(1)));
     const equivalent = calcEq(compType, [first.val, second.val], 'series');
     const isWire = (compType === 'R' && equivalent === 0)
       || (compType === 'C' && equivalent === Infinity);
@@ -187,6 +303,10 @@ export function combineGraphEdges(nodes, edges, selectedIds, action, compType) {
     first.compType = isWire ? 'W' : compType;
     first.label = isWire ? 'W' : 'Eq';
     first.id = generateId();
+    first.route = mergedRoute;
+    first.routeKind = getRouteKind(mergedRoute);
+    first.routeStyle = first.routeKind === 'diagonal' ? 'diagonal' : getRouteStyle(mergedRoute);
+    first.layoutRole = 'equivalent';
     newEdges = newEdges.filter((edge) => edge.id !== second.id);
     return {
       nodes: newNodes.filter((node) => node.id !== sharedNode),
@@ -199,7 +319,12 @@ export function combineGraphEdges(nodes, edges, selectedIds, action, compType) {
 
 export function deleteGraphEdge(nodes, edges, edgeId) {
   let newNodes = nodes.map((node) => ({ ...node }));
-  let newEdges = edges.filter((edge) => edge.id !== edgeId);
+  let newEdges = edges
+    .filter((edge) => edge.id !== edgeId)
+    .map((edge) => ({
+      ...edge,
+      route: Array.isArray(edge.route) ? edge.route.map((point) => ({ ...point })) : edge.route,
+    }));
   let changed = true;
 
   while (changed) {
@@ -223,137 +348,629 @@ export function deleteGraphEdge(nodes, edges, edgeId) {
   return { nodes: newNodes, edges: newEdges };
 }
 
-function findSwitchCandidates(node, candidates = []) {
-  if (node.type === 'leaf') return candidates;
+export const ADVANCED_LAYOUT_FAMILIES = {
+  'rail-ladder': {
+    label: 'Escalera de rieles',
+    diagonals: 0,
+    roots: ['parallel', 'series'],
+  },
+  'frame-crossbar': {
+    label: 'Marco con travesaño',
+    diagonals: 1,
+    roots: ['parallel', 'series'],
+  },
+  'boxed-diagonal': {
+    label: 'Caja con diagonal',
+    diagonals: 1,
+    roots: ['parallel'],
+  },
+  'stacked-cells': {
+    label: 'Celdas apiladas',
+    diagonals: 2,
+    roots: ['series'],
+  },
+  'bridge-fan': {
+    label: 'Marco convergente',
+    diagonals: 1,
+    roots: ['parallel'],
+  },
+  'parallel-rails': {
+    label: 'Rieles paralelos',
+    diagonals: 0,
+    roots: ['parallel'],
+  },
+};
 
-  if (node.type === 'parallel') {
-    node.children.forEach((child) => {
-      if (child.type === 'leaf') candidates.push(child.id);
-      findSwitchCandidates(child, candidates);
-    });
-  } else {
-    node.children.forEach((child) => findSwitchCandidates(child, candidates));
-  }
+const FAMILIES_BY_DIFFICULTY = {
+  guided: ['rail-ladder', 'parallel-rails', 'frame-crossbar'],
+  practice: ['rail-ladder', 'frame-crossbar', 'boxed-diagonal', 'parallel-rails', 'stacked-cells'],
+  challenge: Object.keys(ADVANCED_LAYOUT_FAMILIES),
+};
 
-  return candidates;
+function randomInt(random, min, max) {
+  return Math.floor(random() * (max - min + 1)) + min;
 }
 
-function markSwitch(node, targetId, switchState) {
+function shuffle(values, random) {
+  const result = [...values];
+  for (let index = result.length - 1; index > 0; index -= 1) {
+    const swapIndex = randomInt(random, 0, index);
+    [result[index], result[swapIndex]] = [result[swapIndex], result[index]];
+  }
+  return result;
+}
+
+function splitBudget(total, parts, minimum, random) {
+  const budgets = Array.from({ length: parts }, () => minimum);
+  let remaining = total - minimum * parts;
+
+  while (remaining > 0) {
+    budgets[randomInt(random, 0, parts - 1)] += 1;
+    remaining -= 1;
+  }
+
+  return shuffle(budgets, random);
+}
+
+function chooseNodeType(family, parentType, depth, config, random) {
+  const familyConfig = ADVANCED_LAYOUT_FAMILIES[family];
+  if (!parentType) {
+    const roots = familyConfig.roots;
+    return roots[randomInt(random, 0, roots.length - 1)];
+  }
+
+  if (depth >= config.maxDepth - 1) return 'series';
+  if (parentType === 'parallel') {
+    return random() < 0.82 ? 'series' : 'parallel';
+  }
+  return random() < 0.76 ? 'parallel' : 'series';
+}
+
+function createTopologyLeaf(compType, config, random, nextId, valueMode) {
+  const isWire = random() < config.wireChance;
+  const value = valueMode === 'equal'
+    ? 30
+    : [10, 20, 30, 40, 50, 60][randomInt(random, 0, 5)];
+
+  return {
+    type: 'leaf',
+    id: nextId(),
+    compType: isWire ? 'W' : compType,
+    val: isWire ? (compType === 'R' ? 0 : Infinity) : value,
+    label: isWire ? 'W' : compType,
+  };
+}
+
+function buildTopology({ compType, config, family, random, nextId, valueMode }, remaining, depth = 0, parentType = null) {
+  if (remaining <= 1) {
+    return createTopologyLeaf(compType, config, random, nextId, valueMode);
+  }
+
+  if (depth >= config.maxDepth) {
+    return {
+      type: 'series',
+      id: nextId(),
+      children: Array.from({ length: remaining }, () => (
+        createTopologyLeaf(compType, config, random, nextId, valueMode)
+      )),
+    };
+  }
+
+  let type = chooseNodeType(family, parentType, depth, config, random);
+  let childCount = type === 'parallel'
+    ? (remaining >= 6 && random() < 0.3 ? 3 : 2)
+    : (config.maxBranching >= 3 && remaining >= 3 && random() < 0.28 ? 3 : 2);
+  const minimum = type === 'parallel' ? 2 : 1;
+
+  if (remaining < childCount * minimum) {
+    type = 'series';
+    childCount = Math.min(2, remaining);
+  }
+
+  const budgets = splitBudget(remaining, childCount, type === 'parallel' ? 2 : 1, random);
+  return {
+    type,
+    id: nextId(),
+    children: budgets.map((budget) => buildTopology(
+      { compType, config, family, random, nextId, valueMode },
+      budget,
+      depth + 1,
+      type,
+    )),
+  };
+}
+
+function getTreeStats(node) {
   if (node.type === 'leaf') {
-    if (node.id === targetId) {
-      node.compType = 'S';
-      node.switchState = switchState;
-    }
-    return;
+    return { leaves: 1, depth: 1, series: 0, parallel: 0 };
   }
 
-  node.children.forEach((child) => markSwitch(child, targetId, switchState));
+  const children = node.children.map(getTreeStats);
+  return {
+    leaves: children.reduce((sum, item) => sum + item.leaves, 0),
+    depth: 1 + Math.max(...children.map((item) => item.depth)),
+    series: (node.type === 'series' ? 1 : 0) + children.reduce((sum, item) => sum + item.series, 0),
+    parallel: (node.type === 'parallel' ? 1 : 0) + children.reduce((sum, item) => sum + item.parallel, 0),
+  };
 }
 
-function getTreeHeight(node, branchGap) {
-  if (node.type === 'leaf') return 1;
+function measureTree(node) {
+  if (node.type === 'leaf') return { width: 3, height: 1, leaves: 1 };
 
-  const childHeights = node.children.map((child) => getTreeHeight(child, branchGap));
-  if (node.type === 'series') return Math.max(...childHeights);
+  const children = node.children.map(measureTree);
+  if (node.type === 'series') {
+    return {
+      width: children.reduce((sum, item) => sum + item.width, 0),
+      height: Math.max(...children.map((item) => item.height)),
+      leaves: children.reduce((sum, item) => sum + item.leaves, 0),
+    };
+  }
 
-  return childHeights.reduce((sum, height) => sum + height, 0)
-    + branchGap * Math.max(0, node.children.length - 1);
+  return {
+    width: Math.max(...children.map((item) => item.width)) + 1,
+    height: children.reduce((sum, item) => sum + item.height, 0) + 2 * Math.max(0, children.length - 1),
+    leaves: children.reduce((sum, item) => sum + item.leaves, 0),
+  };
 }
 
-function chooseRouteStyle(edgeIndex, depth, layoutVariant) {
-  const pattern = (edgeIndex + depth + layoutVariant) % 6;
-  if (pattern === 0 || (pattern === 3 && depth > 0)) return 'diagonal';
-  return pattern % 2 === 0 ? 'horizontal' : 'vertical';
+function cleanRoute(route) {
+  const compact = compactPoints(route);
+  return compact.filter((point, index) => {
+    if (index === 0 || index === compact.length - 1) return true;
+    const previous = compact[index - 1];
+    const next = compact[index + 1];
+    const sameHorizontal = previous.y === point.y && point.y === next.y;
+    const sameVertical = previous.x === point.x && point.x === next.x;
+    return !sameHorizontal && !sameVertical;
+  });
 }
 
-function createGraphFromTree(tree, compType, random) {
-  const stats = getTreeStats(tree);
-  const layoutVariant = Math.floor(random() * 4);
-  const branchGap = layoutVariant % 2 === 0 ? 1 : 1.5;
-  const span = Math.max(3, stats.leaves + stats.depth - 1);
+function orthogonalRoute(start, end, preference = 'horizontal') {
+  if (start.x === end.x || start.y === end.y) return [start, end];
+
+  if (preference === 'vertical') {
+    const middleY = (start.y + end.y) / 2;
+    return [start, { x: start.x, y: middleY }, { x: end.x, y: middleY }, end];
+  }
+
+  const middleX = (start.x + end.x) / 2;
+  return [start, { x: middleX, y: start.y }, { x: middleX, y: end.y }, end];
+}
+
+function transformPoint(point, variant, bounds) {
+  if (variant === 1) return { x: bounds.maxX - point.x, y: point.y };
+  if (variant === 2) return { x: point.x, y: bounds.maxY - point.y };
+  if (variant === 3) return { x: bounds.maxY - point.y, y: point.x };
+  return { x: point.x, y: point.y };
+}
+
+function getBounds(points) {
+  const valid = points.filter((point) => Number.isFinite(point.x) && Number.isFinite(point.y));
+  if (valid.length === 0) return { minX: 0, minY: 0, maxX: 1, maxY: 1 };
+  return {
+    minX: Math.min(...valid.map((point) => point.x)),
+    minY: Math.min(...valid.map((point) => point.y)),
+    maxX: Math.max(...valid.map((point) => point.x)),
+    maxY: Math.max(...valid.map((point) => point.y)),
+  };
+}
+
+function collectGraphPoints(nodes, edges, sourceRoute, equivalentRoute) {
+  return nodes.map((node) => ({ x: node.x, y: node.y }))
+    .concat(edges.flatMap((edge) => edge.route || []))
+    .concat(sourceRoute || [])
+    .concat(equivalentRoute || []);
+}
+
+function normalizeGraphLayout(nodes, edges, sourceRoute, equivalentRoute, sourceSymbol) {
+  const bounds = getBounds(collectGraphPoints(nodes, edges, sourceRoute, equivalentRoute));
+  const move = (point) => ({ x: point.x - bounds.minX, y: point.y - bounds.minY });
+  const nextNodes = nodes.map((node) => ({ ...node, x: node.x - bounds.minX, y: node.y - bounds.minY }));
+  const nextEdges = edges.map((edge) => ({
+    ...edge,
+    route: (edge.route || []).map(move),
+  }));
+  const nextSourceRoute = (sourceRoute || []).map(move);
+  const nextEquivalentRoute = (equivalentRoute || []).map(move);
+  const nextSourceSymbol = sourceSymbol
+    ? { ...move(sourceSymbol), angle: sourceSymbol.angle }
+    : null;
+
+  return {
+    nodes: nextNodes,
+    edges: nextEdges,
+    sourceRoute: nextSourceRoute,
+    equivalentRoute: nextEquivalentRoute,
+    sourceSymbol: nextSourceSymbol,
+    bounds: {
+      width: Math.max(1, bounds.maxX - bounds.minX),
+      height: Math.max(1, bounds.maxY - bounds.minY),
+    },
+  };
+}
+
+function transformGraphLayout(graph, variant) {
+  const rawBounds = getBounds(collectGraphPoints(
+    graph.nodes,
+    graph.edges,
+    graph.sourceRoute,
+    graph.equivalentRoute,
+  ));
+  const point = (value) => transformPoint(value, variant, rawBounds);
+  const nextNodes = graph.nodes.map((node) => ({ ...node, ...point(node) }));
+  const nextEdges = graph.edges.map((edge) => ({
+    ...edge,
+    route: (edge.route || []).map(point),
+  }));
+  const nextSourceRoute = (graph.sourceRoute || []).map(point);
+  const nextEquivalentRoute = (graph.equivalentRoute || []).map(point);
+  const nextSourceSymbol = graph.sourceSymbol
+    ? {
+        ...point(graph.sourceSymbol),
+        angle: variant === 3 ? 90 : 0,
+      }
+    : null;
+
+  return normalizeGraphLayout(
+    nextNodes,
+    nextEdges,
+    nextSourceRoute,
+    nextEquivalentRoute,
+    nextSourceSymbol,
+  );
+}
+
+function createGraphFromTree(tree, compType, random, family, layoutVariant) {
+  const metrics = measureTree(tree);
+  const width = Math.max(8, metrics.width);
+  const rootHeight = Math.max(5, metrics.height);
   const nodes = [
     { id: 'A', x: 0, y: 0, terminal: 'A' },
-    { id: 'B', x: span, y: 0, terminal: 'B' },
+    { id: 'B', x: width, y: 0, terminal: 'B' },
   ];
+  const nodePositions = new Map(nodes.map((node) => [node.id, node]));
   const edges = [];
   let nodeCounter = 0;
   let edgeCounter = 0;
   let componentCounter = 1;
+  const familyConfig = ADVANCED_LAYOUT_FAMILIES[family];
+  const context = {
+    diagonalBudget: familyConfig.diagonals,
+    diagonalUsed: 0,
+  };
 
   function addNode(x, y) {
     const id = 'N' + nodeCounter++;
-    nodes.push({ id, x, y });
+    const node = { id, x, y };
+    nodes.push(node);
+    nodePositions.set(id, node);
     return id;
   }
 
-  function addEdge(from, to, leaf, depth) {
-    const isSwitch = leaf.compType === 'S';
-    const isWire = leaf.compType === 'W';
-    let value = leaf.val;
+  function shouldUseDiagonal(start, end, routeContext) {
+    if (!routeContext.diagonalBranch || context.diagonalBudget <= context.diagonalUsed) return false;
+    if (Math.abs(start.x - end.x) < 2 || Math.abs(start.y - end.y) < 1) return false;
+    context.diagonalUsed += 1;
+    return true;
+  }
 
-    if (isWire) value = compType === 'R' ? 0 : Infinity;
-    if (isSwitch) {
-      value = leaf.switchState === 'closed'
-        ? compType === 'R' ? 0 : Infinity
-        : compType === 'R' ? Infinity : 0;
+  function addEdge(from, to, leaf, routeContext) {
+    const startNode = nodePositions.get(from);
+    const endNode = nodePositions.get(to);
+    if (!startNode || !endNode) return;
+
+    const start = { x: startNode.x, y: startNode.y };
+    const end = { x: endNode.x, y: endNode.y };
+    let route;
+    let routeKind = 'orthogonal';
+
+    if (
+      routeContext.directParallel
+      && routeContext.branchY !== start.y
+      && routeContext.branchY !== end.y
+    ) {
+      const inset = Math.min(1, Math.max(0.6, Math.abs(end.x - start.x) * 0.15));
+      route = [
+        start,
+        { x: start.x + inset, y: routeContext.branchY },
+        { x: end.x - inset, y: routeContext.branchY },
+        end,
+      ];
+    } else if (shouldUseDiagonal(start, end, routeContext)) {
+      route = [start, end];
+      routeKind = 'diagonal';
+    } else {
+      route = orthogonalRoute(start, end, routeContext.preference);
     }
 
-    edges.push({
+    const isSwitch = leaf.compType === 'S';
+    const isWire = leaf.compType === 'W';
+    const edge = {
       id: 'e' + edgeCounter,
       from,
       to,
       compType: leaf.compType,
       switchState: isSwitch ? leaf.switchState : undefined,
-      val: value,
+      val: isWire
+        ? (compType === 'R' ? 0 : Infinity)
+        : isSwitch
+          ? leaf.switchState === 'closed'
+            ? (compType === 'R' ? 0 : Infinity)
+            : (compType === 'R' ? Infinity : 0)
+          : leaf.val,
       label: isWire ? 'W' : isSwitch ? 'S' : compType + componentCounter++,
-      routeStyle: chooseRouteStyle(edgeCounter, depth, layoutVariant),
-    });
+      route: cleanRoute(route),
+      routeKind,
+      routeStyle: routeKind === 'diagonal' ? 'diagonal' : getRouteStyle(route),
+    };
+    edges.push(edge);
     edgeCounter += 1;
   }
 
-  function convert(node, from, to, startX, endX, centerY, depth) {
+  function embed(node, from, to, x0, x1, centerY, routeContext) {
     if (node.type === 'leaf') {
-      addEdge(from, to, node, depth);
+      addEdge(from, to, node, {
+        ...routeContext,
+        branchY: routeContext.branchY ?? centerY,
+      });
       return;
     }
 
     if (node.type === 'series') {
-      const segment = (endX - startX) / node.children.length;
+      const segment = (x1 - x0) / node.children.length;
       let childFrom = from;
 
       node.children.forEach((child, index) => {
-        const childStartX = startX + segment * index;
-        const childEndX = startX + segment * (index + 1);
+        const childStartX = x0 + segment * index;
+        const childEndX = x0 + segment * (index + 1);
         const childTo = index === node.children.length - 1
           ? to
           : addNode(childEndX, centerY);
-        convert(child, childFrom, childTo, childStartX, childEndX, centerY, depth + 1);
+        embed(child, childFrom, childTo, childStartX, childEndX, centerY, {
+          ...routeContext,
+          parentType: 'series',
+          directParallel: false,
+        });
         childFrom = childTo;
       });
       return;
     }
 
-    const childHeights = node.children.map((child) => getTreeHeight(child, branchGap));
-    const totalHeight = childHeights.reduce((sum, height) => sum + height, 0)
+    const childMetrics = node.children.map(measureTree);
+    const branchGap = 2;
+    const totalHeight = childMetrics.reduce((sum, item) => sum + item.height, 0)
       + branchGap * Math.max(0, node.children.length - 1);
     let cursor = centerY - totalHeight / 2;
 
     node.children.forEach((child, index) => {
-      const branchY = cursor + childHeights[index] / 2;
-      convert(child, from, to, startX, endX, branchY, depth + 1);
-      cursor += childHeights[index] + branchGap;
+      const branchY = cursor + childMetrics[index].height / 2;
+      const childWidth = childMetrics[index].width;
+      const childStartX = x0 + (x1 - x0 - childWidth) / 2;
+      const childEndX = childStartX + childWidth;
+      const diagonalBranch = (
+        family === 'boxed-diagonal' && index === 0
+      ) || (
+        family === 'stacked-cells' && index % 2 === 0
+      ) || (
+        family === 'frame-crossbar' && index === node.children.length - 1
+      ) || (
+        family === 'bridge-fan' && index === 0
+      );
+
+      embed(child, from, to, childStartX, childEndX, branchY, {
+        ...routeContext,
+        parentType: 'parallel',
+        branchY,
+        directParallel: child.type === 'leaf',
+        diagonalBranch,
+        preference: index % 2 === 0 ? 'horizontal' : 'vertical',
+      });
+      cursor += childMetrics[index].height + branchGap;
     });
   }
 
-  convert(tree, 'A', 'B', 0, span, 0, 0);
+  embed(tree, 'A', 'B', 0, width, 0, {
+    parentType: null,
+    branchY: 0,
+    directParallel: false,
+    preference: 'horizontal',
+    diagonalBranch: false,
+  });
 
-  if (random() > 0.5) {
-    nodes.forEach((node) => {
-      node.y *= -1;
-    });
+  const maxY = Math.max(...nodes.map((node) => node.y), rootHeight / 2);
+  const sourceY = maxY + 3;
+  const sourceCenter = width / 2;
+  const sourceRoute = [
+    { x: 0, y: 0 },
+    { x: 0, y: sourceY },
+    { x: sourceCenter - 0.8, y: sourceY },
+    { x: sourceCenter + 0.8, y: sourceY },
+    { x: width, y: sourceY },
+    { x: width, y: 0 },
+  ];
+  const equivalentRoute = [{ x: 0, y: 0 }, { x: width, y: 0 }];
+  const sourceSymbol = { x: sourceCenter, y: sourceY, angle: 0 };
+  const rawGraph = {
+    nodes: nodes.map((node) => ({ ...node })),
+    edges,
+    sourceRoute,
+    equivalentRoute,
+    sourceSymbol,
+  };
+  const transformed = transformGraphLayout(rawGraph, layoutVariant);
+
+  return {
+    ...transformed,
+    layout: {
+      family,
+      familyLabel: familyConfig.label,
+      orientation: layoutVariant === 3 ? 'vertical' : 'horizontal',
+      sourceRoute: transformed.sourceRoute,
+      sourceSymbol: transformed.sourceSymbol,
+      equivalentRoute: transformed.equivalentRoute,
+      bounds: transformed.bounds,
+    },
+  };
+}
+
+function getSegments(route) {
+  return (route || []).slice(1).map((point, index) => ({
+    first: route[index],
+    second: point,
+  }));
+}
+
+function properSegmentsCross(first, second) {
+  const ax = first.second.x - first.first.x;
+  const ay = first.second.y - first.first.y;
+  const bx = second.second.x - second.first.x;
+  const by = second.second.y - second.first.y;
+  const cross = ax * by - ay * bx;
+  if (Math.abs(cross) < 0.000001) return false;
+
+  const cx = second.first.x - first.first.x;
+  const cy = second.first.y - first.first.y;
+  const t = (cx * by - cy * bx) / cross;
+  const u = (cx * ay - cy * ax) / cross;
+  return t > 0.000001 && t < 0.999999 && u > 0.000001 && u < 0.999999;
+}
+
+function graphSignature(graph, tree, family, layoutVariant) {
+  const routeSignature = graph.edges
+    .map((edge) => (
+      edge.from + '-' + edge.to + ':' + edge.routeKind + ':'
+      + (edge.route || []).map((point) => Math.round(point.x * 2) + ',' + Math.round(point.y * 2)).join(';')
+    ))
+    .sort()
+    .join('|');
+  return topologySignature(tree) + '|' + family + '|' + layoutVariant + '|' + routeSignature;
+}
+
+function graphGeometryIsValid(graph, difficulty) {
+  const allPoints = collectGraphPoints(graph.nodes, graph.edges, graph.sourceRoute, graph.equivalentRoute);
+  const bounds = getBounds(allPoints);
+  const width = Math.max(1, bounds.maxX - bounds.minX);
+  const height = Math.max(1, bounds.maxY - bounds.minY);
+  const aspect = Math.max(width / height, height / width);
+  const aspectLimit = difficulty === 'challenge' ? 2.8 : 3.0;
+  if (aspect > aspectLimit) return false;
+
+  const diagonals = graph.edges.filter((edge) => edge.routeKind === 'diagonal');
+  if (diagonals.length > 2) return false;
+
+  if (graph.edges.some((edge) => getSegments(edge.route).some((segment) => (
+    segment.first.x !== segment.second.x && segment.first.y !== segment.second.y
+      ? edge.routeKind !== 'diagonal'
+      : Math.hypot(
+        segment.second.x - segment.first.x,
+        segment.second.y - segment.first.y,
+      ) < 0.55
+  )))) return false;
+
+  for (let firstIndex = 0; firstIndex < graph.edges.length; firstIndex += 1) {
+    for (let secondIndex = firstIndex + 1; secondIndex < graph.edges.length; secondIndex += 1) {
+      const firstSegments = getSegments(graph.edges[firstIndex].route);
+      const secondSegments = getSegments(graph.edges[secondIndex].route);
+      if (firstSegments.some((first) => secondSegments.some((second) => properSegmentsCross(first, second)))) {
+        return false;
+      }
+    }
   }
 
-  return { nodes, edges, stats, signature: topologySignature(tree), layoutVariant };
+  const directParallelGroups = {};
+  graph.edges.forEach((edge) => {
+    const key = [edge.from, edge.to].sort().join('::');
+    directParallelGroups[key] = (directParallelGroups[key] || 0) + 1;
+  });
+  return Object.values(directParallelGroups).every((count) => count <= 2);
+}
+
+function setSwitchValue(edge, compType, switchState) {
+  edge.compType = 'S';
+  edge.switchState = switchState;
+  edge.label = 'S';
+  edge.val = switchState === 'closed'
+    ? (compType === 'R' ? 0 : Infinity)
+    : (compType === 'R' ? Infinity : 0);
+}
+
+function attachOptionalSwitch(graph, compType, difficulty, random) {
+  const chance = difficulty === 'challenge' ? 0.26 : difficulty === 'practice' ? 0.18 : 0.1;
+  if (random() >= chance) return graph;
+
+  const candidates = shuffle(
+    graph.edges.filter((edge) => edge.compType === compType),
+    random,
+  );
+  for (const candidate of candidates) {
+    const switchState = random() > 0.48 ? 'open' : 'closed';
+    const testEdges = graph.edges.map((edge) => ({ ...edge }));
+    const testEdge = testEdges.find((edge) => edge.id === candidate.id);
+    setSwitchValue(testEdge, compType, switchState);
+
+    if (switchState === 'open') {
+      const afterDelete = deleteGraphEdge(graph.nodes, testEdges, candidate.id);
+      if (afterDelete.edges.length === 0) continue;
+      if (afterDelete.edges.length > 1 && !isSolvable(afterDelete.nodes, afterDelete.edges)) continue;
+    }
+
+    setSwitchValue(candidate, compType, switchState);
+    return graph;
+  }
+
+  return graph;
+}
+
+function createCanonicalFallback(compType, valueMode) {
+  const value = valueMode === 'equal' ? 30 : 20;
+  const nodes = [
+    { id: 'A', x: 0, y: 0, terminal: 'A' },
+    { id: 'B', x: 8, y: 0, terminal: 'B' },
+    { id: 'N0', x: 2, y: -2 },
+    { id: 'N1', x: 6, y: -2 },
+    { id: 'N2', x: 2, y: 2 },
+    { id: 'N3', x: 6, y: 2 },
+  ];
+  const makeEdge = (id, from, to, y, index) => ({
+    id,
+    from,
+    to,
+    compType,
+    val: value,
+    label: compType + index,
+    route: [
+      { x: from === 'A' ? 0 : 6, y: from === 'A' ? 0 : y },
+      { x: from === 'A' ? 2 : 8, y },
+      { x: to === 'B' ? 8 : 6, y: to === 'B' ? 0 : y },
+    ],
+    routeKind: 'orthogonal',
+    routeStyle: 'horizontal',
+  });
+  const edges = [
+    makeEdge('e0', 'A', 'N0', -2, 1),
+    makeEdge('e1', 'N0', 'N1', -2, 2),
+    makeEdge('e2', 'N1', 'B', -2, 3),
+    makeEdge('e3', 'A', 'N2', 2, 4),
+    makeEdge('e4', 'N2', 'N3', 2, 5),
+    makeEdge('e5', 'N3', 'B', 2, 6),
+  ];
+  const sourceRoute = [
+    { x: 0, y: 0 }, { x: 0, y: 5 }, { x: 8, y: 5 }, { x: 8, y: 0 },
+  ];
+  const sourceSymbol = { x: 4, y: 5, angle: 0 };
+  const normalized = normalizeGraphLayout(nodes, edges, sourceRoute, [{ x: 0, y: 0 }, { x: 8, y: 0 }], sourceSymbol);
+  return {
+    ...normalized,
+    layout: {
+      family: 'parallel-rails',
+      familyLabel: ADVANCED_LAYOUT_FAMILIES['parallel-rails'].label,
+      orientation: 'horizontal',
+      sourceRoute: normalized.sourceRoute,
+      sourceSymbol: normalized.sourceSymbol,
+      equivalentRoute: normalized.equivalentRoute,
+      bounds: normalized.bounds,
+    },
+  };
 }
 
 export function generateGridCircuit(compType, valueMode = 'varied', options = {}) {
@@ -371,38 +988,52 @@ export function generateGridCircuit(compType, valueMode = 'varied', options = {}
     recentSignatures = [],
   } = resolvedOptions;
   const config = getDifficultyConfig('advanced', difficulty);
+  const families = FAMILIES_BY_DIFFICULTY[difficulty] || FAMILIES_BY_DIFFICULTY.guided;
   let fallback = null;
 
-  for (let attempt = 0; attempt < 48; attempt += 1) {
+  for (let attempt = 0; attempt < 96; attempt += 1) {
     const attemptSeed = String(seed) + ':advanced:' + difficulty + ':' + attempt;
-    const exercise = generateStructuredExercise(compType, {
-      mode: 'advanced',
-      difficulty,
-      seed: attemptSeed,
-      valueMode: resolvedValueMode,
-      recentSignatures,
-    });
-    const random = createSeededRandom(attemptSeed + ':graph');
-    const candidates = findSwitchCandidates(exercise.tree);
-    const switchChance = difficulty === 'challenge' ? 0.24 : difficulty === 'practice' ? 0.18 : 0.12;
+    const random = createSeededRandom(attemptSeed);
+    const family = families[randomInt(random, 0, families.length - 1)];
+    const targetLeaves = randomInt(random, config.minLeaves, config.maxLeaves);
+    let topologyCounter = 0;
+    const tree = buildTopology(
+      { compType, config, family, random, valueMode: resolvedValueMode, nextId: () => 'g' + topologyCounter++ },
+      targetLeaves,
+    );
+    const stats = getTreeStats(tree);
+    if (stats.series === 0 || stats.parallel === 0) continue;
 
-    if (candidates.length > 0 && random() < switchChance) {
-      const targetId = candidates[Math.floor(random() * candidates.length)];
-      markSwitch(exercise.tree, targetId, random() > 0.5 ? 'open' : 'closed');
-    }
-
-    const graph = createGraphFromTree(exercise.tree, compType, random);
-    fallback = {
+    const layoutVariant = family === 'stacked-cells' ? 3 : randomInt(random, 0, 3);
+    let graph = createGraphFromTree(tree, compType, random, family, layoutVariant);
+    graph = attachOptionalSwitch(graph, compType, difficulty, random);
+    const signature = graphSignature(graph, tree, family, layoutVariant);
+    const candidate = {
       ...graph,
+      stats,
       seed: attemptSeed,
       config,
-      signature: topologySignature(exercise.tree),
+      family,
+      signature,
+      visualSignature: family + ':' + layoutVariant + ':' + graph.edges.map((edge) => edge.routeKind).join(','),
     };
 
-    if (isSolvable(graph.nodes, graph.edges) && !recentSignatures.includes(fallback.signature)) {
-      return fallback;
-    }
+    if (!isSolvable(candidate.nodes, candidate.edges)) continue;
+    if (!graphGeometryIsValid(candidate, difficulty)) continue;
+    fallback = candidate;
+    if (!recentSignatures.includes(signature)) return candidate;
   }
 
-  return fallback;
+  if (fallback) return fallback;
+
+  const canonical = createCanonicalFallback(compType, resolvedValueMode);
+  return {
+    ...canonical,
+    stats: { leaves: canonical.edges.length, depth: 3, series: 2, parallel: 1 },
+    seed: String(seed) + ':advanced:fallback',
+    config,
+    family: 'parallel-rails',
+    signature: 'fallback:' + compType + ':' + resolvedValueMode,
+    visualSignature: 'parallel-rails:horizontal',
+  };
 }

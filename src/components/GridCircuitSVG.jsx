@@ -1,10 +1,13 @@
 import React, { useId, useMemo } from 'react';
 import { formatValue } from '../lib/graphCircuit';
 
-const GRID_SPACING_X = 126;
-const GRID_SPACING_Y = 110;
-const PADDING = 72;
-const SYMBOL_LEN = 42;
+// The drawing uses a compact, regular coordinate system. The graph generator
+// owns the topology and the exact route; this component maps it to pixels and
+// adds the interactive presentation layer.
+const GRID_SPACING_X = 82;
+const GRID_SPACING_Y = 62;
+const PADDING = 64;
+const SYMBOL_LEN = 38;
 const COLORS = {
   wire: '#526B80',
   ink: '#183047',
@@ -15,18 +18,6 @@ const COLORS = {
   switch: '#9B72C7',
   open: '#EF7770',
 };
-
-function seededRandom(seed) {
-  let hash = 0xdeadbeef;
-  for (let index = 0; index < seed.length; index += 1) {
-    hash = Math.imul(hash ^ seed.charCodeAt(index), 2654435761);
-  }
-  return ((hash ^ (hash >>> 16)) >>> 0) / 4294967296;
-}
-
-function getParallelKey(edge) {
-  return [edge.from, edge.to].sort().join('::');
-}
 
 function getSymbolColor(edge, isSelected, isEquivalent) {
   if (isSelected) return COLORS.selected;
@@ -46,6 +37,9 @@ function SvgDefs({ prefix }) {
       <filter id={prefix + '-equivalent'} x="-40%" y="-40%" width="180%" height="180%">
         <feDropShadow dx="0" dy="0" stdDeviation="4" floodColor={COLORS.equivalent} floodOpacity="0.65" />
       </filter>
+      <filter id={prefix + '-battery-glow'} x="-80%" y="-80%" width="260%" height="260%">
+        <feDropShadow dx="0" dy="0" stdDeviation="5" floodColor="#FFB454" floodOpacity="0.45" />
+      </filter>
       <pattern id={prefix + '-grid'} width="24" height="24" patternUnits="userSpaceOnUse">
         <path d="M 24 0 L 0 0 0 24" fill="none" stroke="#B8CBD5" strokeWidth="0.55" opacity="0.55" />
       </pattern>
@@ -57,9 +51,9 @@ function SvgDefs({ prefix }) {
   );
 }
 
-function ZigZagSymbol({ color }) {
+function ZigZagSymbol({ color, scale = 1 }) {
   const halfLength = SYMBOL_LEN / 2;
-  const amplitude = 7;
+  const amplitude = 6;
   const peaks = 5;
   const segmentWidth = SYMBOL_LEN / peaks;
   let points = String(-halfLength) + ',0';
@@ -81,17 +75,18 @@ function ZigZagSymbol({ color }) {
       strokeLinecap="round"
       vectorEffect="non-scaling-stroke"
       pointerEvents="none"
+      transform={'scale(' + scale + ')'}
     />
   );
 }
 
-function PlatesSymbol({ color }) {
+function PlatesSymbol({ color, scale = 1 }) {
   const halfLength = SYMBOL_LEN / 2;
   const gap = 8;
   const plateHeight = 17;
 
   return (
-    <g pointerEvents="none">
+    <g pointerEvents="none" transform={'scale(' + scale + ')'}>
       <line x1={-halfLength} y1="0" x2={-gap / 2} y2="0" stroke={color} strokeWidth="2.5" strokeLinecap="round" vectorEffect="non-scaling-stroke" />
       <line x1={-gap / 2} y1={-plateHeight / 2} x2={-gap / 2} y2={plateHeight / 2} stroke={color} strokeWidth="3" strokeLinecap="round" vectorEffect="non-scaling-stroke" />
       <line x1={gap / 2} y1={-plateHeight / 2} x2={gap / 2} y2={plateHeight / 2} stroke={color} strokeWidth="3" strokeLinecap="round" vectorEffect="non-scaling-stroke" />
@@ -100,11 +95,11 @@ function PlatesSymbol({ color }) {
   );
 }
 
-function SwitchSymbol({ color, switchState }) {
+function SwitchSymbol({ color, switchState, scale = 1 }) {
   const isOpen = switchState === 'open';
 
   return (
-    <g pointerEvents="none">
+    <g pointerEvents="none" transform={'scale(' + scale + ')'}>
       <circle cx="-11" cy="0" r="3" fill="#FFFFFF" stroke={color} strokeWidth="2" vectorEffect="non-scaling-stroke" />
       <circle cx="11" cy="0" r="3" fill="#FFFFFF" stroke={color} strokeWidth="2" vectorEffect="non-scaling-stroke" />
       <line
@@ -121,13 +116,102 @@ function SwitchSymbol({ color, switchState }) {
   );
 }
 
+function BatterySymbol({ x, y, angle = 0, filterId }) {
+  return (
+    <g transform={'translate(' + x + ', ' + y + ') rotate(' + angle + ')'} pointerEvents="none" filter={'url(#' + filterId + ')'}>
+      <line x1="-8" y1="-14" x2="-8" y2="14" stroke="#39546A" strokeWidth="5" strokeLinecap="round" vectorEffect="non-scaling-stroke" />
+      <line x1="8" y1="-23" x2="8" y2="23" stroke="#183047" strokeWidth="3" strokeLinecap="round" vectorEffect="non-scaling-stroke" />
+      <text x="-24" y="1" textAnchor="middle" dominantBaseline="middle" fontSize="15" fontWeight="800" fill="#39546A" fontFamily="'Space Grotesk', sans-serif">−</text>
+      <text x="25" y="1" textAnchor="middle" dominantBaseline="middle" fontSize="15" fontWeight="800" fill="#D98C42" fontFamily="'Space Grotesk', sans-serif">+</text>
+      <text x="0" y="39" textAnchor="middle" fontSize="11" fontWeight="700" fill="#60788B" fontFamily="'IBM Plex Mono', monospace">FUENTE · 12 V</text>
+    </g>
+  );
+}
+
+function compactPoints(points) {
+  return points.filter((point, index) => {
+    if (index === 0) return true;
+    const previous = points[index - 1];
+    return point.x !== previous.x || point.y !== previous.y;
+  });
+}
+
+function pointsToPath(points) {
+  return compactPoints(points).map((point, index) => (
+    (index === 0 ? 'M ' : 'L ') + point.x + ' ' + point.y
+  )).join(' ');
+}
+
+function getLongestSegment(points) {
+  let longest = null;
+
+  for (let index = 0; index < points.length - 1; index += 1) {
+    const first = points[index];
+    const second = points[index + 1];
+    const length = Math.hypot(second.x - first.x, second.y - first.y);
+    if (!longest || length > longest.length) {
+      longest = { index, first, second, length };
+    }
+  }
+
+  return longest;
+}
+
+function moveAlong(first, second, distance) {
+  const length = Math.hypot(second.x - first.x, second.y - first.y);
+  if (length < 1) return { ...first };
+  return {
+    x: first.x + ((second.x - first.x) / length) * distance,
+    y: first.y + ((second.y - first.y) / length) * distance,
+  };
+}
+
+function makeEdgeGeometry(routePoints) {
+  const route = compactPoints(routePoints || []);
+  const segment = getLongestSegment(route);
+  if (!segment || segment.length < 1) return null;
+
+  const symbolLength = Math.min(SYMBOL_LEN, segment.length * 0.58);
+  const symbolHalf = symbolLength / 2;
+  const center = moveAlong(segment.first, segment.second, segment.length / 2);
+  const symbolStart = moveAlong(segment.first, segment.second, segment.length / 2 - symbolHalf);
+  const symbolEnd = moveAlong(segment.first, segment.second, segment.length / 2 + symbolHalf);
+  const firstPathPoints = compactPoints(route.slice(0, segment.index + 1).concat(symbolStart));
+  const secondPathPoints = compactPoints([symbolEnd].concat(route.slice(segment.index + 1)));
+  const segmentDx = (segment.second.x - segment.first.x) / segment.length;
+  const segmentDy = (segment.second.y - segment.first.y) / segment.length;
+  let perpX = -segmentDy;
+  let perpY = segmentDx;
+  if (perpY > 0) {
+    perpX *= -1;
+    perpY *= -1;
+  }
+
+  const labelGap = Math.max(20, Math.min(28, segment.length * 0.14));
+
+  return {
+    angle: Math.atan2(segmentDy, segmentDx) * (180 / Math.PI),
+    centerX: center.x,
+    centerY: center.y,
+    symbolScale: symbolLength / SYMBOL_LEN,
+    visibleFirstPath: pointsToPath(firstPathPoints),
+    visibleSecondPath: pointsToPath(secondPathPoints),
+    labelX: center.x - perpX * labelGap,
+    labelY: center.y - perpY * labelGap,
+    valueX: center.x + perpX * labelGap,
+    valueY: center.y + perpY * labelGap,
+    hitWidth: Math.max(72, symbolLength + 30),
+    hitHeight: Math.max(42, Math.min(58, symbolLength + 18)),
+  };
+}
+
 function getEdgeLabel(edge) {
   if (edge.compType === 'W') return 'Cable, cortocircuito';
   if (edge.compType === 'S') {
     return 'Interruptor ' + (edge.switchState === 'open' ? 'abierto' : 'cerrado');
   }
   return (edge.compType === 'R' ? 'Resistencia ' : 'Capacitor ')
-    + edge.label + ', ' + formatValue(edge.val, edge.compType);
+    + edge.label + ', ' + formatValue(edge.val, edge.compType, edge.switchState);
 }
 
 function handleKeyboardSelect(event, edgeId, onClick) {
@@ -158,7 +242,7 @@ function handleCircuitCanvasClick(event, onSelect) {
     }
   });
 
-  if (closest && closest.distance <= 28) {
+  if (closest && closest.distance <= 46) {
     onSelect(closest.id);
     return;
   }
@@ -166,171 +250,54 @@ function handleCircuitCanvasClick(event, onSelect) {
   onSelect(null);
 }
 
-const PARALLEL_LANE_GAP = 42;
-
-function compactPoints(points) {
-  return points.filter((point, index) => {
-    if (index === 0) return true;
-    const previous = points[index - 1];
-    return point.x !== previous.x || point.y !== previous.y;
-  });
-}
-
-function pointsToPath(points) {
-  return points.map((point, index) => (
-    (index === 0 ? 'M ' : 'L ') + point.x + ' ' + point.y
-  )).join(' ');
-}
-
-function getParallelLayout(edge, edges) {
-  const parallelEdges = edges
-    .filter((candidate) => getParallelKey(candidate) === getParallelKey(edge))
-    .slice()
-    .sort((first, second) => first.id.localeCompare(second.id));
-  const parallelIndex = parallelEdges.findIndex((candidate) => candidate.id === edge.id);
-  const parallelOffset = parallelEdges.length > 1
-    ? (parallelIndex - (parallelEdges.length - 1) / 2) * PARALLEL_LANE_GAP
-    : 0;
-
-  return { parallelEdges, parallelOffset };
-}
-
-function getRoutePoints(edge, edges, x1, y1, x2, y2, isMessy) {
-  const { parallelEdges, parallelOffset } = getParallelLayout(edge, edges);
-  const start = { x: x1, y: y1 };
-  const end = { x: x2, y: y2 };
-  const horizontalDistance = Math.abs(x2 - x1);
-  const verticalDistance = Math.abs(y2 - y1);
-
-  if (parallelEdges.length > 1) {
-    if (horizontalDistance >= verticalDistance) {
-      const direction = x2 >= x1 ? 1 : -1;
-      const inset = Math.min(30, Math.max(12, horizontalDistance * 0.16));
-      const laneY = (y1 + y2) / 2 + parallelOffset;
-      return compactPoints([
-        start,
-        { x: x1 + direction * inset, y: laneY },
-        { x: x2 - direction * inset, y: laneY },
-        end,
-      ]);
-    }
-
-    const direction = y2 >= y1 ? 1 : -1;
-    const inset = Math.min(30, Math.max(12, verticalDistance * 0.16));
-    const laneX = (x1 + x2) / 2 + parallelOffset;
-    return compactPoints([
-      start,
-      { x: laneX, y: y1 + direction * inset },
-      { x: laneX, y: y2 - direction * inset },
-      end,
-    ]);
-  }
-
-  if (horizontalDistance < 1 || verticalDistance < 1) return [start, end];
-
-  const routeStyle = edge.routeStyle || (
-    isMessy && seededRandom(edge.id + '-geometric-route') > 0.62
-      ? 'diagonal'
-      : 'horizontal'
+function renderPath(path, key, showFlow, flowClassName = 'flow-trace') {
+  if (!path) return null;
+  return (
+    <React.Fragment key={key}>
+      <path
+        d={path}
+        fill="none"
+        stroke={COLORS.wire}
+        strokeWidth="2.7"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        vectorEffect="non-scaling-stroke"
+        pointerEvents="none"
+      />
+      {showFlow && (
+        <path
+          className={flowClassName}
+          d={path}
+          fill="none"
+          strokeLinejoin="round"
+          vectorEffect="non-scaling-stroke"
+          pointerEvents="none"
+        />
+      )}
+    </React.Fragment>
   );
-
-  if (routeStyle === 'diagonal') return [start, end];
-
-  if (routeStyle === 'vertical') {
-    const middleY = (y1 + y2) / 2;
-    return compactPoints([
-      start,
-      { x: x1, y: middleY },
-      { x: x2, y: middleY },
-      end,
-    ]);
-  }
-
-  const middleX = (x1 + x2) / 2;
-  return compactPoints([
-    start,
-    { x: middleX, y: y1 },
-    { x: middleX, y: y2 },
-    end,
-  ]);
 }
 
-function getLongestSegment(points) {
-  let longest = null;
-
-  for (let index = 0; index < points.length - 1; index += 1) {
-    const first = points[index];
-    const second = points[index + 1];
-    const length = Math.hypot(second.x - first.x, second.y - first.y);
-    if (!longest || length > longest.length) {
-      longest = { index, first, second, length };
-    }
-  }
-
-  return longest;
+function renderFlowPath(path, key, flowClassName = 'flow-trace') {
+  if (!path) return null;
+  return (
+    <path
+      key={key}
+      className={flowClassName}
+      d={path}
+      fill="none"
+      strokeLinejoin="round"
+      vectorEffect="non-scaling-stroke"
+      pointerEvents="none"
+    />
+  );
 }
 
-function moveAlong(first, second, distance) {
-  const length = Math.hypot(second.x - first.x, second.y - first.y);
-  if (length < 1) return { ...first };
-  return {
-    x: first.x + ((second.x - first.x) / length) * distance,
-    y: first.y + ((second.y - first.y) / length) * distance,
-  };
-}
-
-function makeEdgeGeometry(edge, edges, x1, y1, x2, y2, isMessy) {
-  const routePoints = getRoutePoints(edge, edges, x1, y1, x2, y2, isMessy);
-  const segment = getLongestSegment(routePoints);
-  if (!segment || segment.length < 1) return null;
-
-  const symbolHalf = Math.min(SYMBOL_LEN / 2, segment.length * 0.28);
-  const center = moveAlong(segment.first, segment.second, segment.length / 2);
-  const symbolStart = moveAlong(segment.first, segment.second, segment.length / 2 - symbolHalf);
-  const symbolEnd = moveAlong(segment.first, segment.second, segment.length / 2 + symbolHalf);
-  const firstPathPoints = compactPoints(routePoints.slice(0, segment.index + 1).concat(symbolStart));
-  const secondPathPoints = compactPoints([symbolEnd].concat(routePoints.slice(segment.index + 1)));
-  const segmentDx = (segment.second.x - segment.first.x) / segment.length;
-  const segmentDy = (segment.second.y - segment.first.y) / segment.length;
-  let perpX = -segmentDy;
-  let perpY = segmentDx;
-  if (perpY > 0) {
-    perpX *= -1;
-    perpY *= -1;
-  }
-  const { parallelEdges, parallelOffset } = getParallelLayout(edge, edges);
-  const isHorizontalSymbolSegment = Math.abs(segment.second.x - segment.first.x)
-    >= Math.abs(segment.second.y - segment.first.y);
-  const outwardParallelOffset = parallelOffset === 0
-    ? -1
-    : Math.sign(parallelOffset);
-  const parallelTagDistance = 24;
-
-  return {
-    angle: Math.atan2(segmentDy, segmentDx) * (180 / Math.PI),
-    centerX: center.x,
-    centerY: center.y,
-    visibleFirstPath: pointsToPath(firstPathPoints),
-    visibleSecondPath: pointsToPath(secondPathPoints),
-    labelX: center.x - perpX * 25,
-    labelY: center.y - perpY * 25,
-    valueX: center.x + perpX * 25,
-    valueY: center.y + perpY * 25,
-    parallelCount: parallelEdges.length,
-    tagX: isHorizontalSymbolSegment
-      ? center.x
-      : center.x + outwardParallelOffset * parallelTagDistance,
-    tagY: isHorizontalSymbolSegment
-      ? center.y + outwardParallelOffset * parallelTagDistance
-      : center.y,
-  };
-}
-
-function EdgeComponent({ edge, edges, x1, y1, x2, y2, isSelected, onClick, isMessy, showFlow, filterIds }) {
-  const geometry = makeEdgeGeometry(edge, edges, x1, y1, x2, y2, isMessy);
+function EdgeComponent({ edge, routePoints, isSelected, onClick, showFlow, filterIds }) {
+  const geometry = makeEdgeGeometry(routePoints);
   if (!geometry) return null;
 
-  const isEquivalent = edge.label === 'Eq';
+  const isEquivalent = edge.label === 'Eq' || edge.layoutRole === 'equivalent';
   const color = getSymbolColor(edge, isSelected, isEquivalent);
   const filter = isSelected
     ? 'url(#' + filterIds.selected + ')'
@@ -338,8 +305,7 @@ function EdgeComponent({ edge, edges, x1, y1, x2, y2, isSelected, onClick, isMes
       ? 'url(#' + filterIds.equivalent + ')'
       : undefined;
   const flowEnabled = showFlow && (edge.compType !== 'S' || edge.switchState === 'closed');
-  const hitHeight = geometry.parallelCount > 1 ? 28 : 36;
-  const labelValue = formatValue(edge.val, edge.compType);
+  const labelValue = formatValue(edge.val, edge.compType, edge.switchState);
 
   return (
     <g
@@ -357,71 +323,36 @@ function EdgeComponent({ edge, edges, x1, y1, x2, y2, isSelected, onClick, isMes
       filter={filter}
     >
       <rect
-        x="-38"
-        y={-hitHeight / 2}
-        width="76"
-        height={hitHeight}
-        rx="14"
+        x={-geometry.hitWidth / 2}
+        y={-geometry.hitHeight / 2}
+        width={geometry.hitWidth}
+        height={geometry.hitHeight}
+        rx="12"
         fill="transparent"
         data-component-hitbox="true"
-        pointerEvents="none"
+        pointerEvents="all"
         transform={'translate(' + geometry.centerX + ', ' + geometry.centerY + ') rotate(' + geometry.angle + ')'}
       />
-      <path
-        d={geometry.visibleFirstPath}
-        fill="none"
-        stroke={COLORS.wire}
-        strokeWidth="2.7"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-        vectorEffect="non-scaling-stroke"
-        pointerEvents="none"
-      />
-      <path
-        d={geometry.visibleSecondPath}
-        fill="none"
-        stroke={COLORS.wire}
-        strokeWidth="2.7"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-        vectorEffect="non-scaling-stroke"
-        pointerEvents="none"
-      />
-      {flowEnabled && (
-        <>
-          <path className="flow-trace" d={geometry.visibleFirstPath} fill="none" strokeLinejoin="round" vectorEffect="non-scaling-stroke" />
-          <path className="flow-trace" d={geometry.visibleSecondPath} fill="none" strokeLinejoin="round" vectorEffect="non-scaling-stroke" />
-        </>
-      )}
+      {renderPath(geometry.visibleFirstPath, edge.id + '-first', flowEnabled)}
+      {renderPath(geometry.visibleSecondPath, edge.id + '-second', flowEnabled)}
       <g transform={'translate(' + geometry.centerX + ', ' + geometry.centerY + ') rotate(' + geometry.angle + ')'} pointerEvents="none">
         {edge.compType === 'W' ? (
-          <line x1={-SYMBOL_LEN / 2} y1="0" x2={SYMBOL_LEN / 2} y2="0" stroke={color} strokeWidth="3" strokeLinecap="round" vectorEffect="non-scaling-stroke" />
+          <line x1={-SYMBOL_LEN / 2} y1="0" x2={SYMBOL_LEN / 2} y2="0" stroke={color} strokeWidth="3" strokeLinecap="round" vectorEffect="non-scaling-stroke" transform={'scale(' + geometry.symbolScale + ')'} />
         ) : edge.compType === 'S' ? (
-          <SwitchSymbol color={color} switchState={edge.switchState} />
+          <SwitchSymbol color={color} switchState={edge.switchState} scale={geometry.symbolScale} />
         ) : edge.compType === 'R' ? (
-          <ZigZagSymbol color={color} />
+          <ZigZagSymbol color={color} scale={geometry.symbolScale} />
         ) : (
-          <PlatesSymbol color={color} />
+          <PlatesSymbol color={color} scale={geometry.symbolScale} />
         )}
       </g>
 
-      {geometry.parallelCount > 1 ? (
-        <g transform={'translate(' + geometry.tagX + ', ' + geometry.tagY + ')'} pointerEvents="none">
-          <rect x="-42" y="-10" width="84" height="20" rx="7" fill="#FFFFFF" fillOpacity="0.88" stroke="#D1E0E7" strokeWidth="0.8" />
-          <text textAnchor="middle" dominantBaseline="middle" fontSize="9.5" fontWeight="700" fill={isSelected ? '#168F82' : COLORS.ink} fontFamily="'IBM Plex Mono', monospace">
-            {edge.label + ' · ' + labelValue}
-          </text>
-        </g>
-      ) : (
-        <>
-          <text x={geometry.labelX} y={geometry.labelY} textAnchor="middle" dominantBaseline="middle" fontSize="10.5" fontWeight="700" fill={COLORS.ink} fontFamily="'Space Grotesk', sans-serif" pointerEvents="none">
-            {edge.label}
-          </text>
-          <text x={geometry.valueX} y={geometry.valueY} textAnchor="middle" dominantBaseline="middle" fontSize="9.5" fontWeight="600" fill={isSelected ? '#168F82' : '#60788B'} fontFamily="'IBM Plex Mono', monospace" pointerEvents="none">
-            {labelValue}
-          </text>
-        </>
-      )}
+      <text x={geometry.labelX} y={geometry.labelY} textAnchor="middle" dominantBaseline="middle" fontSize="10.5" fontWeight="700" fill={COLORS.ink} fontFamily="'Space Grotesk', sans-serif" pointerEvents="none">
+        {edge.label}
+      </text>
+      <text x={geometry.valueX} y={geometry.valueY} textAnchor="middle" dominantBaseline="middle" fontSize="9.5" fontWeight="600" fill={isSelected ? '#168F82' : '#60788B'} fontFamily="'IBM Plex Mono', monospace" pointerEvents="none">
+        {labelValue}
+      </text>
     </g>
   );
 }
@@ -432,7 +363,7 @@ function NodeDot({ node, px, py }) {
     const color = isPositive ? '#D98C42' : '#527D98';
     return (
       <g pointerEvents="none">
-        <circle cx={px} cy={py} r="12" fill={color} opacity="0.16" />
+        <circle cx={px} cy={py} r="13" fill={color} opacity="0.16" />
         <circle cx={px} cy={py} r="7" fill={color} />
         <text x={px} y={py} textAnchor="middle" dominantBaseline="middle" fontSize="11" fontWeight="900" fill="white" fontFamily="'Space Grotesk', sans-serif">
           {isPositive ? '+' : '−'}
@@ -447,49 +378,139 @@ function NodeDot({ node, px, py }) {
   return <circle cx={px} cy={py} r="4.5" fill={COLORS.ink} pointerEvents="none" />;
 }
 
-function getLayout(nodes, edges) {
+function getLayout(nodes, edges, sourceRoute, equivalentRoute) {
   const activeNodeIds = new Set(['A', 'B']);
   edges.forEach((edge) => {
     activeNodeIds.add(edge.from);
     activeNodeIds.add(edge.to);
   });
   const activeNodes = nodes.filter((node) => activeNodeIds.has(node.id));
+  const graphPoints = activeNodes.map((node) => ({ x: node.x, y: node.y }))
+    .concat(edges.flatMap((edge) => edge.route || []))
+    .concat(sourceRoute || [])
+    .concat(equivalentRoute || []);
 
-  if (activeNodes.length === 0) {
-    return { positions: {}, width: 480, height: 360, activeNodes: [] };
+  if (graphPoints.length === 0) {
+    return { positions: {}, routes: {}, sourceRoute: [], width: 640, height: 420, activeNodes: [], toPixel: null };
   }
 
-  const minX = Math.min(...activeNodes.map((node) => node.x));
-  const minY = Math.min(...activeNodes.map((node) => node.y));
-  const maxX = Math.max(...activeNodes.map((node) => node.x));
-  const maxY = Math.max(...activeNodes.map((node) => node.y));
-  const positions = Object.fromEntries(activeNodes.map((node) => [
-    node.id,
-    {
-      px: PADDING + (node.x - minX) * GRID_SPACING_X,
-      py: PADDING + (node.y - minY) * GRID_SPACING_Y,
-    },
+  const minX = Math.min(...graphPoints.map((point) => point.x));
+  const minY = Math.min(...graphPoints.map((point) => point.y));
+  const maxX = Math.max(...graphPoints.map((point) => point.x));
+  const maxY = Math.max(...graphPoints.map((point) => point.y));
+  const toPixel = (point) => ({
+    x: PADDING + (point.x - minX) * GRID_SPACING_X,
+    y: PADDING + (point.y - minY) * GRID_SPACING_Y,
+  });
+
+  const positions = Object.fromEntries(activeNodes.map((node) => [node.id, toPixel(node)]));
+  const routes = Object.fromEntries(edges.map((edge) => [
+    edge.id,
+    (edge.route || [
+      { x: edge.from === 'A' ? 0 : edge.to === 'A' ? maxX : 0, y: 0 },
+      { x: edge.to === 'B' ? maxX : edge.from === 'B' ? 0 : maxX, y: 0 },
+    ]).map(toPixel),
   ]));
 
   return {
     positions,
+    routes,
+    sourceRoute: (sourceRoute || []).map(toPixel),
+    equivalentRoute: (equivalentRoute || []).map(toPixel),
+    width: Math.max(640, PADDING * 2 + (maxX - minX) * GRID_SPACING_X),
+    height: Math.max(420, PADDING * 2 + (maxY - minY) * GRID_SPACING_Y),
     activeNodes,
-    width: Math.max(480, PADDING * 2 + (maxX - minX) * GRID_SPACING_X),
-    height: Math.max(360, PADDING * 2 + (maxY - minY) * GRID_SPACING_Y),
+    toPixel,
   };
 }
 
-export default function GridCircuitSVG({ nodes, edges, selectedIds, onSelect, isMessy, showFlow = false }) {
+function renderSourceRoute(route, sourceSymbol, showFlow) {
+  if (!route || route.length < 2) return null;
+
+  const symbolY = sourceSymbol?.y;
+  const symbolX = sourceSymbol?.x;
+  const segments = [];
+  let current = [];
+
+  const flush = () => {
+    if (current.length > 1) segments.push(current);
+    current = [];
+  };
+
+  route.forEach((point, index) => {
+    const next = route[index + 1];
+    current.push(point);
+    if (!next) return;
+
+    const crossesBatteryGap = Number.isFinite(symbolX)
+      && Number.isFinite(symbolY)
+      && (
+        (
+          point.y === symbolY
+          && next.y === symbolY
+          && Math.min(point.x, next.x) <= symbolX
+          && Math.max(point.x, next.x) >= symbolX
+        )
+        || (
+          point.x === symbolX
+          && next.x === symbolX
+          && Math.min(point.y, next.y) <= symbolY
+          && Math.max(point.y, next.y) >= symbolY
+        )
+      );
+    if (crossesBatteryGap) flush();
+  });
+  flush();
+
+  return (
+    <g className="source-decoration" pointerEvents="none">
+      {segments.map((segment, index) => renderPath(pointsToPath(segment), 'source-' + index, false))}
+      {showFlow && segments.map((segment, index) => renderFlowPath(
+        pointsToPath(segment),
+        'source-flow-' + index,
+        index === 0 ? 'flow-trace flow-trace--positive' : 'flow-trace',
+      ))}
+    </g>
+  );
+}
+
+function transformSourceSymbol(sourceSymbol, layout) {
+  if (!sourceSymbol || !layout.toPixel) return null;
+  return {
+    ...layout.toPixel(sourceSymbol),
+    angle: sourceSymbol.angle || 0,
+  };
+}
+
+export default function GridCircuitSVG({
+  nodes,
+  edges,
+  selectedIds,
+  onSelect,
+  showFlow = false,
+  sourceRoute = [],
+  sourceSymbol = null,
+  equivalentRoute = [],
+  layout: layoutMeta = null,
+}) {
   const generatedId = useId();
   const prefix = 'advanced-' + generatedId.replace(/[^a-zA-Z0-9_-]/g, '');
-  const layout = useMemo(() => getLayout(nodes, edges), [edges, nodes]);
+  const layout = useMemo(
+    () => getLayout(nodes, edges, sourceRoute, equivalentRoute),
+    [edges, equivalentRoute, nodes, sourceRoute],
+  );
+  const batteryPosition = transformSourceSymbol(sourceSymbol, layout);
   const filterIds = {
     selected: prefix + '-selected',
     equivalent: prefix + '-equivalent',
   };
 
   return (
-    <div className="circuit-scroll circuit-scroll--fit">
+    <div
+      className="circuit-scroll circuit-scroll--fit"
+      data-layout-family={layoutMeta?.family || undefined}
+      data-layout-orientation={layoutMeta?.orientation || undefined}
+    >
       <svg
         className="circuit-svg"
         width={layout.width}
@@ -502,30 +523,29 @@ export default function GridCircuitSVG({ nodes, edges, selectedIds, onSelect, is
       >
         <SvgDefs prefix={prefix} />
         <rect width={layout.width} height={layout.height} fill={'url(#' + prefix + '-grid-major)'} pointerEvents="all" />
-        {edges.map((edge) => {
-          const start = layout.positions[edge.from];
-          const end = layout.positions[edge.to];
-          if (!start || !end) return null;
-          return (
-            <EdgeComponent
-              key={edge.id}
-              edge={edge}
-              edges={edges}
-              x1={start.px}
-              y1={start.py}
-              x2={end.px}
-              y2={end.py}
-              isSelected={selectedIds.includes(edge.id)}
-              onClick={onSelect}
-              isMessy={isMessy}
-              showFlow={showFlow}
-              filterIds={filterIds}
-            />
-          );
-        })}
+        {renderSourceRoute(layout.sourceRoute, batteryPosition, showFlow)}
+        {batteryPosition && (
+          <BatterySymbol
+            x={batteryPosition.x}
+            y={batteryPosition.y}
+            angle={batteryPosition.angle}
+            filterId={prefix + '-battery-glow'}
+          />
+        )}
+        {edges.map((edge) => (
+          <EdgeComponent
+            key={edge.id}
+            edge={edge}
+            routePoints={layout.routes[edge.id]}
+            isSelected={selectedIds.includes(edge.id)}
+            onClick={onSelect}
+            showFlow={showFlow}
+            filterIds={filterIds}
+          />
+        ))}
         {layout.activeNodes.map((node) => {
           const position = layout.positions[node.id];
-          return <NodeDot key={node.id} node={node} px={position.px} py={position.py} />;
+          return <NodeDot key={node.id} node={node} px={position.x} py={position.y} />;
         })}
       </svg>
     </div>

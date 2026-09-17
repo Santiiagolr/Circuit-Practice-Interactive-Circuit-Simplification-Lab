@@ -89,10 +89,16 @@ function reduceGraph(nodes, edges, compType) {
     const next = combineGraphEdges(currentNodes, currentEdges, move.ids, move.action, compType);
     currentNodes = next.nodes;
     currentEdges = next.edges;
+    assert.ok(currentEdges.every((edge) => (
+      Array.isArray(edge.route)
+      && edge.route.length >= 2
+      && edge.route.every((point) => Number.isFinite(point.x) && Number.isFinite(point.y))
+    )), 'La reducción debe conservar una ruta renderizable.');
     guard += 1;
   }
 
   assert.equal(currentEdges.length, 1, 'El grafo debe terminar en un único elemento.');
+  assert.deepEqual(new Set([currentEdges[0].from, currentEdges[0].to]), new Set(['A', 'B']));
   return currentEdges[0];
 }
 
@@ -121,6 +127,14 @@ for (const difficulty of Object.keys(DIFFICULTY_PRESETS)) {
       assert.ok(graph);
       assert.equal(isSolvable(graph.nodes, graph.edges), true);
       assert.ok(graph.nodes.every((node) => Number.isFinite(node.x) && Number.isFinite(node.y)));
+      assert.ok(Array.isArray(graph.sourceRoute) && graph.sourceRoute.length >= 2);
+      assert.ok(Array.isArray(graph.equivalentRoute) && graph.equivalentRoute.length >= 2);
+      assert.ok(graph.edges.every((edge) => (
+        Array.isArray(edge.route)
+        && edge.route.length >= 2
+        && edge.route.every((point) => Number.isFinite(point.x) && Number.isFinite(point.y))
+        && ['orthogonal', 'diagonal'].includes(edge.routeKind)
+      )));
       assert.ok(graph.edges.every((edge) => (
         ['horizontal', 'vertical', 'diagonal'].includes(edge.routeStyle)
       )));

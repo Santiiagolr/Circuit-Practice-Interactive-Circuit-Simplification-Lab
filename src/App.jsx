@@ -9,8 +9,9 @@ import {
   Grid3X3,
   Layers,
   Lightbulb,
+  Maximize2,
+  Minimize2,
   RefreshCw,
-  Shuffle,
   Spline,
   Trophy,
   XCircle,
@@ -276,11 +277,12 @@ function App() {
   const feedbackKeyRef = useRef(0);
   const historyRef = useRef({});
   const historyInitializedRef = useRef(false);
+  const circuitPanelRef = useRef(null);
 
   const [mode, setMode] = useState('basic');
   const [compType, setCompType] = useState('R');
   const [difficulty, setDifficulty] = useState('guided');
-  const [isMessy, setIsMessy] = useState(false);
+  const [isWorkspaceFullscreen, setIsWorkspaceFullscreen] = useState(false);
   const [showFormulas, setShowFormulas] = useState(false);
   const [showFlow, setShowFlow] = useState(true);
   const [valueMode, setValueMode] = useState('varied');
@@ -317,6 +319,43 @@ function App() {
   useEffect(() => {
     window.localStorage.setItem(PROGRESS_KEY, JSON.stringify(progress));
   }, [progress]);
+
+  useEffect(() => {
+    const handleFullscreenChange = () => {
+      setIsWorkspaceFullscreen(document.fullscreenElement === circuitPanelRef.current);
+    };
+
+    document.addEventListener('fullscreenchange', handleFullscreenChange);
+    return () => document.removeEventListener('fullscreenchange', handleFullscreenChange);
+  }, []);
+
+  const toggleWorkspaceFullscreen = useCallback(async () => {
+    if (document.fullscreenElement === circuitPanelRef.current) {
+      await document.exitFullscreen();
+      return;
+    }
+
+    if (isWorkspaceFullscreen && !document.fullscreenElement) {
+      setIsWorkspaceFullscreen(false);
+      return;
+    }
+
+    const panel = circuitPanelRef.current;
+    if (!panel) return;
+
+    if (!panel.requestFullscreen) {
+      setIsWorkspaceFullscreen(true);
+      return;
+    }
+
+    try {
+      await panel.requestFullscreen({ navigationUI: 'hide' });
+    } catch {
+      // Some embedded browsers expose the API but reject it. The CSS fallback
+      // still gives the user a usable full-workbench mode.
+      setIsWorkspaceFullscreen(true);
+    }
+  }, [isWorkspaceFullscreen]);
 
   useEffect(() => {
     if (historyInitializedRef.current) return;
@@ -601,7 +640,7 @@ function App() {
   if (mode === 'basic' && !tree) return null;
 
   return (
-    <div className="app-shell">
+    <div className={'app-shell' + (isWorkspaceFullscreen ? ' is-workbench-fullscreen' : '')}>
       <header className="topbar">
         <div className="topbar-main">
           <div className="brand-lockup">
@@ -717,13 +756,6 @@ function App() {
           >
             <Activity size={16} /> Flujo
           </button>
-          <button
-            className={'topbar-tool' + (isMessy ? ' is-active is-warning' : '')}
-            aria-pressed={isMessy}
-            onClick={() => setIsMessy((value) => !value)}
-          >
-            <Shuffle size={16} /> Malla con ruido
-          </button>
         </div>
       </header>
 
@@ -758,17 +790,55 @@ function App() {
         <FeedbackBanner feedback={feedback} mode={mode} />
 
         <section className="workbench-grid">
-          <section className="circuit-panel" aria-label={'Circuito de ' + componentName.toLowerCase()}>
+          <section
+            ref={circuitPanelRef}
+            className={'circuit-panel' + (isWorkspaceFullscreen ? ' is-fullscreen-workbench' : '')}
+            aria-label={'Circuito de ' + componentName.toLowerCase()}
+          >
             <div className="panel-heading">
               <div>
                 <span className="eyebrow">Mesa de trabajo</span>
                 <h2>{mode === 'basic' ? 'Reducción por bloques' : 'Lectura topológica'}</h2>
               </div>
-              <div className="panel-readout" title={panelReadout}>
-                <span className="readout-dot" />
-                {panelReadout}
+              <div className="panel-heading__tools">
+                <div className="panel-readout" title={panelReadout}>
+                  <span className="readout-dot" />
+                  {panelReadout}
+                </div>
+                <button
+                  type="button"
+                  className="panel-fullscreen-button"
+                  aria-pressed={isWorkspaceFullscreen}
+                  aria-label={isWorkspaceFullscreen ? 'Salir de pantalla completa' : 'Abrir mesa de trabajo en pantalla completa'}
+                  title={isWorkspaceFullscreen ? 'Salir de pantalla completa' : 'Pantalla completa'}
+                  onClick={toggleWorkspaceFullscreen}
+                >
+                  {isWorkspaceFullscreen ? <Minimize2 size={17} /> : <Maximize2 size={17} />}
+                  <span>{isWorkspaceFullscreen ? 'Salir' : 'Pantalla completa'}</span>
+                </button>
               </div>
             </div>
+
+            {isWorkspaceFullscreen && (
+              <div className="fullscreen-toolbar" aria-label="Controles de la mesa de trabajo">
+                <Telemetry
+                  steps={steps}
+                  mistakes={mistakes}
+                  score={progress.score}
+                  streak={progress.streak}
+                  bestStreak={progress.bestStreak}
+                  isSolved={isSolved}
+                />
+                <ExerciseActions
+                  selectedCount={selectedIds.length}
+                  isSolved={isSolved}
+                  openSwitchSelected={openSwitchSelected}
+                  onCombine={handleCombine}
+                  onDeleteSwitch={handleDeleteSwitch}
+                  onNewCircuit={() => createExercise()}
+                />
+              </div>
+            )}
 
             <div className="circuit-stage">
               {mode === 'basic' && tree && (
@@ -776,7 +846,6 @@ function App() {
                   tree={tree}
                   selectedIds={selectedIds}
                   onSelect={handleSelect}
-                  isMessy={isMessy}
                   showFlow={flowActive}
                 />
               )}
@@ -786,8 +855,11 @@ function App() {
                   edges={graphEdges}
                   selectedIds={selectedIds}
                   onSelect={handleSelect}
-                  isMessy={isMessy}
                   showFlow={flowActive}
+                  sourceRoute={graphExercise.sourceRoute}
+                  sourceSymbol={graphExercise.sourceSymbol}
+                  equivalentRoute={graphExercise.equivalentRoute}
+                  layout={graphExercise.layout}
                 />
               )}
               {isSolved && (
