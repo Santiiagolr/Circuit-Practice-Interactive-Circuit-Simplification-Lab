@@ -68,6 +68,14 @@ npm run dev
 
 Vite will print the local URL, usually `http://localhost:5173`.
 
+### Windows launcher
+
+The repository includes `CircuitPractice.exe` as a Windows launcher. Double-click it from the project root to start Vite and open the application in the default browser.
+
+The launcher requires Node.js and an installed `node_modules/` directory. It selects an available local port between `5173` and `5199`, keeps the Vite console open while the application is running, and stops the development server when you press `Ctrl+C`.
+
+The launcher source is available at `tools/CircuitPracticeLauncher/CircuitPracticeLauncher.cs`.
+
 ### Available scripts
 
 | Command | Description |
@@ -176,6 +184,14 @@ npm run dev
 
 Vite mostrará la URL local, normalmente `http://localhost:5173`.
 
+### Launcher para Windows
+
+El repositorio incluye `CircuitPractice.exe` como launcher para Windows. Hacé doble clic sobre el archivo desde la carpeta raíz del proyecto para iniciar Vite y abrir la aplicación en el navegador predeterminado.
+
+El launcher requiere Node.js y la carpeta `node_modules/` instalada. Selecciona un puerto local disponible entre `5173` y `5199`, mantiene abierta la consola de Vite mientras la aplicación está activa y detiene el servidor cuando presionás `Ctrl+C`.
+
+El código fuente del launcher está en `tools/CircuitPracticeLauncher/CircuitPracticeLauncher.cs`.
+
 ### Scripts disponibles
 
 | Comando | Descripción |
@@ -224,4 +240,3 @@ El build genera la carpeta `dist/`, que está excluida del control de versiones 
 ### Licencia
 
 Este proyecto se distribuye bajo la [Licencia MIT](LICENSE).
-
