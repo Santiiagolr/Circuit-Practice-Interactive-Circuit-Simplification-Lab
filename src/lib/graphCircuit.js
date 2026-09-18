@@ -829,10 +829,12 @@ function createGraphFromTree(tree, compType, random, family, layoutVariant) {
   const sourceCenter = width / 2;
   const sourceRoute = [
     { x: 0, y: 0 },
-    { x: 0, y: sourceY },
+    { x: -1, y: 0 },
+    { x: -1, y: sourceY },
     { x: sourceCenter - 0.8, y: sourceY },
     { x: sourceCenter + 0.8, y: sourceY },
-    { x: width, y: sourceY },
+    { x: width + 1, y: sourceY },
+    { x: width + 1, y: 0 },
     { x: width, y: 0 },
   ];
   const equivalentRoute = [{ x: 0, y: 0 }, { x: width, y: 0 }];
@@ -867,19 +869,151 @@ function getSegments(route) {
   }));
 }
 
-function properSegmentsCross(first, second) {
+const GEOMETRY_EPSILON = 0.000001;
+
+function pointsMatch(first, second) {
+  return Boolean(first && second)
+    && Math.abs(first.x - second.x) <= GEOMETRY_EPSILON
+    && Math.abs(first.y - second.y) <= GEOMETRY_EPSILON;
+}
+
+function segmentIntersection(first, second) {
   const ax = first.second.x - first.first.x;
   const ay = first.second.y - first.first.y;
   const bx = second.second.x - second.first.x;
   const by = second.second.y - second.first.y;
   const cross = ax * by - ay * bx;
-  if (Math.abs(cross) < 0.000001) return false;
-
   const cx = second.first.x - first.first.x;
   const cy = second.first.y - first.first.y;
+
+  if (Math.abs(cross) <= GEOMETRY_EPSILON) {
+    if (Math.abs(cx * ay - cy * ax) > GEOMETRY_EPSILON) return null;
+
+    const useX = Math.abs(ax) >= Math.abs(ay);
+    const firstStart = useX ? first.first.x : first.first.y;
+    const firstEnd = useX ? first.second.x : first.second.y;
+    const secondStart = useX ? second.first.x : second.first.y;
+    const secondEnd = useX ? second.second.x : second.second.y;
+    const overlapStart = Math.max(
+      Math.min(firstStart, firstEnd),
+      Math.min(secondStart, secondEnd),
+    );
+    const overlapEnd = Math.min(
+      Math.max(firstStart, firstEnd),
+      Math.max(secondStart, secondEnd),
+    );
+
+    if (overlapEnd < overlapStart - GEOMETRY_EPSILON) return null;
+    if (overlapEnd > overlapStart + GEOMETRY_EPSILON) return { type: 'overlap' };
+
+    const ratio = Math.abs(firstEnd - firstStart) <= GEOMETRY_EPSILON
+      ? 0
+      : (overlapStart - firstStart) / (firstEnd - firstStart);
+    return {
+      type: 'touch',
+      point: {
+        x: first.first.x + ax * ratio,
+        y: first.first.y + ay * ratio,
+      },
+    };
+  }
+
   const t = (cx * by - cy * bx) / cross;
   const u = (cx * ay - cy * ax) / cross;
-  return t > 0.000001 && t < 0.999999 && u > 0.000001 && u < 0.999999;
+  if (
+    t < -GEOMETRY_EPSILON || t > 1 + GEOMETRY_EPSILON
+    || u < -GEOMETRY_EPSILON || u > 1 + GEOMETRY_EPSILON
+  ) return null;
+
+  return {
+    type: (
+      t > GEOMETRY_EPSILON && t < 1 - GEOMETRY_EPSILON
+      && u > GEOMETRY_EPSILON && u < 1 - GEOMETRY_EPSILON
+    ) ? 'cross' : 'touch',
+    point: {
+      x: first.first.x + ax * t,
+      y: first.first.y + ay * t,
+    },
+  };
+}
+
+function routeEndsAtEdgeNodes(edge, nodePositions) {
+  const route = edge.route || [];
+  if (route.length < 2) return false;
+  const from = nodePositions.get(edge.from);
+  const to = nodePositions.get(edge.to);
+  const first = route[0];
+  const last = route[route.length - 1];
+  return (pointsMatch(first, from) && pointsMatch(last, to))
+    || (pointsMatch(first, to) && pointsMatch(last, from));
+}
+
+function intersectionIsSharedNode(firstEdge, secondEdge, point, nodePositions) {
+  if (!point) return false;
+  const sharedNodeIds = [firstEdge.from, firstEdge.to]
+    .filter((nodeId) => nodeId === secondEdge.from || nodeId === secondEdge.to);
+  if (sharedNodeIds.length === 0) return false;
+
+  const firstRoute = firstEdge.route || [];
+  const secondRoute = secondEdge.route || [];
+  const firstRouteEndpoints = [firstRoute[0], firstRoute[firstRoute.length - 1]];
+  const secondRouteEndpoints = [secondRoute[0], secondRoute[secondRoute.length - 1]];
+
+  return sharedNodeIds.some((nodeId) => {
+    const node = nodePositions.get(nodeId);
+    return pointsMatch(point, node)
+      && firstRouteEndpoints.some((endpoint) => pointsMatch(endpoint, node))
+      && secondRouteEndpoints.some((endpoint) => pointsMatch(endpoint, node));
+  });
+}
+
+export function getGraphGeometryIssues(graph) {
+  const issues = [];
+  const nodePositions = new Map(graph.nodes.map((node) => [node.id, node]));
+  const visibleRoutes = [...graph.edges];
+
+  if (Array.isArray(graph.sourceRoute) && graph.sourceRoute.length >= 2) {
+    visibleRoutes.push({
+      id: '__source__',
+      from: 'A',
+      to: 'B',
+      route: graph.sourceRoute,
+    });
+  }
+
+  for (const edge of visibleRoutes) {
+    if (!routeEndsAtEdgeNodes(edge, nodePositions)) {
+      issues.push({ type: 'detached-route', edges: [edge.id] });
+    }
+  }
+
+  for (let firstIndex = 0; firstIndex < visibleRoutes.length; firstIndex += 1) {
+    for (let secondIndex = firstIndex + 1; secondIndex < visibleRoutes.length; secondIndex += 1) {
+      const firstEdge = visibleRoutes[firstIndex];
+      const secondEdge = visibleRoutes[secondIndex];
+      const firstSegments = getSegments(firstEdge.route);
+      const secondSegments = getSegments(secondEdge.route);
+
+      for (const firstSegment of firstSegments) {
+        for (const secondSegment of secondSegments) {
+          const intersection = segmentIntersection(firstSegment, secondSegment);
+          if (!intersection) continue;
+
+          const allowedNode = intersection.type === 'touch'
+            && intersectionIsSharedNode(firstEdge, secondEdge, intersection.point, nodePositions);
+          if (!allowedNode) {
+            issues.push({
+              type: intersection.type,
+              edges: [firstEdge.id, secondEdge.id],
+              point: intersection.point,
+            });
+          }
+        }
+      }
+    }
+  }
+
+  return issues;
 }
 
 function graphSignature(graph, tree, family, layoutVariant) {
@@ -914,15 +1048,7 @@ function graphGeometryIsValid(graph, difficulty) {
       ) < 0.55
   )))) return false;
 
-  for (let firstIndex = 0; firstIndex < graph.edges.length; firstIndex += 1) {
-    for (let secondIndex = firstIndex + 1; secondIndex < graph.edges.length; secondIndex += 1) {
-      const firstSegments = getSegments(graph.edges[firstIndex].route);
-      const secondSegments = getSegments(graph.edges[secondIndex].route);
-      if (firstSegments.some((first) => secondSegments.some((second) => properSegmentsCross(first, second)))) {
-        return false;
-      }
-    }
-  }
+  if (getGraphGeometryIssues(graph).length > 0) return false;
 
   const directParallelGroups = {};
   graph.edges.forEach((edge) => {
@@ -978,31 +1104,31 @@ function createCanonicalFallback(compType, valueMode) {
     { id: 'N2', x: 2, y: 2 },
     { id: 'N3', x: 6, y: 2 },
   ];
-  const makeEdge = (id, from, to, y, index) => ({
-    id,
-    from,
-    to,
-    compType,
-    val: value,
-    label: compType + index,
-    route: [
-      { x: from === 'A' ? 0 : 6, y: from === 'A' ? 0 : y },
-      { x: from === 'A' ? 2 : 8, y },
-      { x: to === 'B' ? 8 : 6, y: to === 'B' ? 0 : y },
-    ],
-    routeKind: 'orthogonal',
-    routeStyle: 'horizontal',
-  });
+  const makeEdge = (id, from, to, index, route) => {
+    return {
+      id,
+      from,
+      to,
+      compType,
+      val: value,
+      label: compType + index,
+      route,
+      routeKind: 'orthogonal',
+      routeStyle: getRouteStyle(route),
+    };
+  };
   const edges = [
-    makeEdge('e0', 'A', 'N0', -2, 1),
-    makeEdge('e1', 'N0', 'N1', -2, 2),
-    makeEdge('e2', 'N1', 'B', -2, 3),
-    makeEdge('e3', 'A', 'N2', 2, 4),
-    makeEdge('e4', 'N2', 'N3', 2, 5),
-    makeEdge('e5', 'N3', 'B', 2, 6),
+    makeEdge('e0', 'A', 'N0', 1, [{ x: 0, y: 0 }, { x: 0, y: -2 }, { x: 2, y: -2 }]),
+    makeEdge('e1', 'N0', 'N1', 2, [{ x: 2, y: -2 }, { x: 6, y: -2 }]),
+    makeEdge('e2', 'N1', 'B', 3, [{ x: 6, y: -2 }, { x: 8, y: -2 }, { x: 8, y: 0 }]),
+    makeEdge('e3', 'A', 'N2', 4, [{ x: 0, y: 0 }, { x: 2, y: 0 }, { x: 2, y: 2 }]),
+    makeEdge('e4', 'N2', 'N3', 5, [{ x: 2, y: 2 }, { x: 6, y: 2 }]),
+    makeEdge('e5', 'N3', 'B', 6, [{ x: 6, y: 2 }, { x: 6, y: 0 }, { x: 8, y: 0 }]),
   ];
   const sourceRoute = [
-    { x: 0, y: 0 }, { x: 0, y: 5 }, { x: 8, y: 5 }, { x: 8, y: 0 },
+    { x: 0, y: 0 }, { x: -1, y: 0 }, { x: -1, y: 5 },
+    { x: 3.2, y: 5 }, { x: 4.8, y: 5 },
+    { x: 9, y: 5 }, { x: 9, y: 0 }, { x: 8, y: 0 },
   ];
   const sourceSymbol = { x: 4, y: 5, angle: 0 };
   const normalized = normalizeGraphLayout(nodes, edges, sourceRoute, [{ x: 0, y: 0 }, { x: 8, y: 0 }], sourceSymbol);

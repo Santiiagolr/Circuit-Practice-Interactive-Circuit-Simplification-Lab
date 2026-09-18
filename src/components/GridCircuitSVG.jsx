@@ -188,6 +188,8 @@ function makeEdgeGeometry(routePoints) {
   }
 
   const labelGap = Math.max(20, Math.min(28, segment.length * 0.14));
+  const labelCenterX = center.x + perpX * (labelGap + 5);
+  const labelCenterY = center.y + perpY * (labelGap + 5);
 
   return {
     angle: Math.atan2(segmentDy, segmentDx) * (180 / Math.PI),
@@ -196,10 +198,12 @@ function makeEdgeGeometry(routePoints) {
     symbolScale: symbolLength / SYMBOL_LEN,
     visibleFirstPath: pointsToPath(firstPathPoints),
     visibleSecondPath: pointsToPath(secondPathPoints),
-    labelX: center.x - perpX * labelGap,
-    labelY: center.y - perpY * labelGap,
-    valueX: center.x + perpX * labelGap,
-    valueY: center.y + perpY * labelGap,
+    labelX: labelCenterX,
+    labelY: labelCenterY - 6,
+    valueX: labelCenterX,
+    valueY: labelCenterY + 7,
+    labelPlateX: labelCenterX - 31,
+    labelPlateY: labelCenterY - 15,
     hitWidth: Math.max(72, symbolLength + 30),
     hitHeight: Math.max(42, Math.min(58, symbolLength + 18)),
   };
@@ -347,6 +351,19 @@ function EdgeComponent({ edge, routePoints, isSelected, onClick, showFlow, filte
         )}
       </g>
 
+      <rect
+        x={geometry.labelPlateX}
+        y={geometry.labelPlateY}
+        width="62"
+        height="30"
+        rx="6"
+        fill="#F7FBFC"
+        fillOpacity="0.94"
+        stroke={isSelected ? COLORS.selected : '#C8D8DF'}
+        strokeWidth="0.8"
+        vectorEffect="non-scaling-stroke"
+        pointerEvents="none"
+      />
       <text x={geometry.labelX} y={geometry.labelY} textAnchor="middle" dominantBaseline="middle" fontSize="10.5" fontWeight="700" fill={COLORS.ink} fontFamily="'Space Grotesk', sans-serif" pointerEvents="none">
         {edge.label}
       </text>

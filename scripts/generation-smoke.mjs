@@ -10,6 +10,7 @@ import {
   combineGraphEdges,
   deleteGraphEdge,
   generateGridCircuit,
+  getGraphGeometryIssues,
   isSolvable,
   validateGraphSelection,
 } from '../src/lib/graphCircuit.js';
@@ -162,6 +163,11 @@ for (const difficulty of Object.keys(DIFFICULTY_PRESETS)) {
       assert.ok(graph.edges.every((edge) => (
         ['horizontal', 'vertical', 'diagonal'].includes(edge.routeStyle)
       )));
+      assert.deepEqual(
+        getGraphGeometryIssues(graph),
+        [],
+        'El circuito no debe contener rutas desprendidas, cruces ni cables superpuestos.',
+      );
       reduceGraph(graph.nodes, graph.edges, compType);
       graphSignatures.add(graph.signature);
 
