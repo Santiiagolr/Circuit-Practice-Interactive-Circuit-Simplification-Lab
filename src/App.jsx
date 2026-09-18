@@ -252,14 +252,14 @@ function ExerciseActions({
         disabled={selectedCount < 2 || isSolved}
         onClick={() => onCombine('series')}
       >
-        <Spline size={17} /> Serie
+        <Spline size={17} /> Serie <kbd className="action-shortcut">Q</kbd>
       </button>
       <button
         className="button button--parallel"
         disabled={selectedCount < 2 || isSolved}
         onClick={() => onCombine('parallel')}
       >
-        <Layers size={17} /> Paralelo
+        <Layers size={17} /> Paralelo <kbd className="action-shortcut">E</kbd>
       </button>
       {openSwitchSelected && (
         <button className="button button--danger" onClick={onDeleteSwitch}>
@@ -577,6 +577,28 @@ function App() {
     steps,
     tree,
   ]);
+
+  useEffect(() => {
+    const handleReductionShortcut = (event) => {
+      if (event.defaultPrevented || event.repeat || event.ctrlKey || event.metaKey || event.altKey) return;
+
+      const target = event.target;
+      const isEditing = target instanceof HTMLElement && (
+        target.isContentEditable
+        || ['INPUT', 'TEXTAREA', 'SELECT'].includes(target.tagName)
+      );
+      if (isEditing || selectedIds.length < 2 || isSolved) return;
+
+      const key = event.key.toLowerCase();
+      if (key !== 'q' && key !== 'e') return;
+
+      event.preventDefault();
+      handleCombine(key === 'q' ? 'series' : 'parallel');
+    };
+
+    window.addEventListener('keydown', handleReductionShortcut);
+    return () => window.removeEventListener('keydown', handleReductionShortcut);
+  }, [handleCombine, isSolved, selectedIds.length]);
 
   const handleDeleteSwitch = useCallback(() => {
     if (mode !== 'advanced' || selectedIds.length !== 1) {

@@ -49,6 +49,30 @@ function samePair(first, second) {
   return [first.from, first.to].sort().join(':') === [second.from, second.to].sort().join(':');
 }
 
+{
+  const nodes = [
+    { id: 'A', x: 0, y: 0, terminal: true },
+    { id: 'N1', x: 1, y: 0 },
+    { id: 'N2', x: 2, y: 0 },
+    { id: 'N3', x: 3, y: 0 },
+    { id: 'B', x: 4, y: 0, terminal: true },
+  ];
+  const edges = [
+    { id: 'E1', from: 'A', to: 'N1', val: 10, compType: 'R', route: [{ x: 0, y: 0 }, { x: 1, y: 0 }] },
+    { id: 'E2', from: 'N1', to: 'N2', val: 10, compType: 'R', route: [{ x: 1, y: 0 }, { x: 2, y: 0 }] },
+    { id: 'E3', from: 'N2', to: 'N3', val: 10, compType: 'R', route: [{ x: 2, y: 0 }, { x: 3, y: 0 }] },
+    { id: 'E4', from: 'N3', to: 'B', val: 10, compType: 'R', route: [{ x: 3, y: 0 }, { x: 4, y: 0 }] },
+  ];
+  const ids = ['E3', 'E1', 'E4', 'E2'];
+  const validation = validateGraphSelection(nodes, edges, ids, 'series');
+  assert.equal(validation.valid, true, validation.message);
+  const combined = combineGraphEdges(nodes, edges, ids, 'series', 'R');
+  assert.equal(combined.edges.length, 1, 'Cuatro resistencias en serie deben combinarse en un solo paso.');
+  assert.equal(combined.edges[0].val, 40);
+  assert.deepEqual(new Set([combined.edges[0].from, combined.edges[0].to]), new Set(['A', 'B']));
+  assert.deepEqual(combined.nodes.map((node) => node.id).sort(), ['A', 'B']);
+}
+
 function reduceGraph(nodes, edges, compType) {
   let currentNodes = nodes;
   let currentEdges = edges;

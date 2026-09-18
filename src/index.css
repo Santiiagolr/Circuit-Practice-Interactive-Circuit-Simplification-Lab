@@ -506,6 +506,22 @@
   background: #FFF1D7;
 }
 
+.action-shortcut {
+  display: inline-grid;
+  min-width: 1.35rem;
+  height: 1.35rem;
+  margin-left: 0.2rem;
+  padding: 0 0.28rem;
+  place-items: center;
+  border: 1px solid currentColor;
+  border-radius: 0.32rem;
+  background: rgb(255 255 255 / 42%);
+  color: inherit;
+  font: 700 0.68rem/1 var(--font-mono);
+  opacity: 0.78;
+  box-shadow: 0 1px 0 rgb(255 255 255 / 55%) inset;
+}
+
 .button--series:hover:not(:disabled) {
   background: #FFE6B9;
   box-shadow: 0 7px 17px rgba(255, 180, 84, 0.22);

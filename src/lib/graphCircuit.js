@@ -33,6 +33,92 @@ function otherEnd(edge, nodeId) {
   return edge.from === nodeId ? edge.to : edge.from;
 }
 
+function inspectSeriesChain(nodes, edges, selected) {
+  const selectedByNode = new Map();
+
+  for (const edge of selected) {
+    if (edge.from === edge.to) {
+      return { valid: false, message: 'Una conexión cerrada sobre el mismo nodo no forma una cadena en serie.' };
+    }
+
+    for (const nodeId of [edge.from, edge.to]) {
+      const attached = selectedByNode.get(nodeId) || [];
+      attached.push(edge);
+      selectedByNode.set(nodeId, attached);
+    }
+  }
+
+  const endpoints = [];
+  for (const [nodeId, attached] of selectedByNode) {
+    if (attached.length === 1) {
+      endpoints.push(nodeId);
+      continue;
+    }
+    if (attached.length !== 2) {
+      return {
+        valid: false,
+        message: 'La selección se bifurca. Para serie debe formar una única cadena sin ramificaciones.',
+      };
+    }
+
+    const node = nodes.find((candidate) => candidate.id === nodeId);
+    if (!node) {
+      return { valid: false, message: 'Uno de los nodos compartidos ya no existe.' };
+    }
+    if (node.terminal) {
+      return {
+        valid: false,
+        message: 'La cadena atraviesa un terminal de la batería; no se combina en serie por allí.',
+      };
+    }
+
+    const degree = getNodeEdges(edges, nodeId).length;
+    if (degree !== 2) {
+      return {
+        valid: false,
+        message: 'El nodo intermedio tiene ' + degree + ' conexiones. Para serie debe tener exactamente 2.',
+      };
+    }
+  }
+
+  if (endpoints.length !== 2) {
+    return {
+      valid: false,
+      message: 'Para serie, la selección debe formar una cadena abierta y continua.',
+    };
+  }
+
+  const orderedEdges = [];
+  const pathNodes = [endpoints[0]];
+  const visited = new Set();
+  let currentNode = endpoints[0];
+
+  while (orderedEdges.length < selected.length) {
+    const nextEdge = (selectedByNode.get(currentNode) || [])
+      .find((edge) => !visited.has(edge.id));
+    if (!nextEdge) break;
+
+    visited.add(nextEdge.id);
+    orderedEdges.push(nextEdge);
+    currentNode = otherEnd(nextEdge, currentNode);
+    pathNodes.push(currentNode);
+  }
+
+  if (orderedEdges.length !== selected.length || currentNode !== endpoints[1]) {
+    return {
+      valid: false,
+      message: 'Los componentes seleccionados no forman una única cadena continua en serie.',
+    };
+  }
+
+  return {
+    valid: true,
+    orderedEdges,
+    pathNodes,
+    internalNodeIds: pathNodes.slice(1, -1),
+  };
+}
+
 function isTerminalEdge(edge) {
   const endpoints = new Set([edge.from, edge.to]);
   return edge.from !== edge.to && endpoints.has('A') && endpoints.has('B');
@@ -109,43 +195,7 @@ export function validateGraphSelection(nodes, edges, selectedIds, action) {
   }
 
   if (action === 'series') {
-    if (selected.length !== 2) {
-      return { valid: false, message: 'Para serie, seleccioná exactamente 2 componentes.' };
-    }
-
-    const [first, second] = selected;
-    const sharedNodes = [first.from, first.to].filter((nodeId) => (
-      nodeId === second.from || nodeId === second.to
-    ));
-
-    if (sharedNodes.length !== 1) {
-      return {
-        valid: false,
-        message: 'Para serie deben compartir un único nodo intermedio; si comparten dos, están en paralelo.',
-      };
-    }
-
-    const sharedNode = sharedNodes[0];
-    const node = nodes.find((candidate) => candidate.id === sharedNode);
-    if (!node) {
-      return { valid: false, message: 'El nodo compartido ya no existe.' };
-    }
-    if (node.terminal) {
-      return {
-        valid: false,
-        message: 'El nodo compartido es un terminal de la batería; no se combinan en serie por allí.',
-      };
-    }
-
-    const degree = getNodeEdges(edges, sharedNode).length;
-    if (degree !== 2) {
-      return {
-        valid: false,
-        message: 'El nodo compartido tiene ' + degree + ' conexiones. Para serie debe tener exactamente 2.',
-      };
-    }
-
-    return { valid: true, sharedNode };
+    return inspectSeriesChain(nodes, edges, selected);
   }
 
   return { valid: false, message: 'Acción no reconocida.' };
@@ -280,25 +330,21 @@ export function combineGraphEdges(nodes, edges, selectedIds, action, compType) {
     const removeIds = selected.slice(1).map((edge) => edge.id);
     newEdges = newEdges.filter((edge) => !removeIds.includes(edge.id));
   } else if (action === 'series') {
-    const [first, second] = selected;
-    const sharedNode = [first.from, first.to].find((nodeId) => (
-      nodeId === second.from || nodeId === second.to
-    ));
-    const firstEnd = sharedNode ? otherEnd(first, sharedNode) : null;
-    const secondEnd = sharedNode ? otherEnd(second, sharedNode) : null;
+    const chain = inspectSeriesChain(newNodes, newEdges, selected);
+    if (!chain.valid) return { nodes, edges };
 
-    if (!sharedNode || firstEnd === secondEnd) {
-      return { nodes, edges };
-    }
-
-    const firstRoute = orientRoute(first, firstEnd, sharedNode, newNodes);
-    const secondRoute = orientRoute(second, sharedNode, secondEnd, newNodes);
-    const mergedRoute = compactPoints(firstRoute.concat(secondRoute.slice(1)));
-    const equivalent = calcEq(compType, [first.val, second.val], 'series');
+    const { orderedEdges, pathNodes, internalNodeIds } = chain;
+    const selectedEdgeIds = new Set(orderedEdges.map((edge) => edge.id));
+    const mergedRoute = compactPoints(orderedEdges.flatMap((edge, index) => {
+      const route = orientRoute(edge, pathNodes[index], pathNodes[index + 1], newNodes);
+      return index === 0 ? route : route.slice(1);
+    }));
+    const equivalent = calcEq(compType, orderedEdges.map((edge) => edge.val), 'series');
     const isWire = (compType === 'R' && equivalent === 0)
       || (compType === 'C' && equivalent === Infinity);
-    first.from = firstEnd;
-    first.to = secondEnd;
+    const first = orderedEdges[0];
+    first.from = pathNodes[0];
+    first.to = pathNodes[pathNodes.length - 1];
     first.val = equivalent;
     first.compType = isWire ? 'W' : compType;
     first.label = isWire ? 'W' : 'Eq';
@@ -307,9 +353,10 @@ export function combineGraphEdges(nodes, edges, selectedIds, action, compType) {
     first.routeKind = getRouteKind(mergedRoute);
     first.routeStyle = first.routeKind === 'diagonal' ? 'diagonal' : getRouteStyle(mergedRoute);
     first.layoutRole = 'equivalent';
-    newEdges = newEdges.filter((edge) => edge.id !== second.id);
+    newEdges = newEdges.filter((edge) => edge === first || !selectedEdgeIds.has(edge.id));
+    const internalNodeSet = new Set(internalNodeIds);
     return {
-      nodes: newNodes.filter((node) => node.id !== sharedNode),
+      nodes: newNodes.filter((node) => !internalNodeSet.has(node.id)),
       edges: newEdges,
     };
   }
