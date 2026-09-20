@@ -43,6 +43,43 @@ test('mouse, keyboard and touch can complete a deterministic basic exercise', as
   expect(errors).toEqual([]);
 });
 
+test('Q and E reduce capacitor selections from the keyboard', async ({ page }, testInfo) => {
+  test.skip(testInfo.project.name !== 'chromium', 'The shortcut contract runs once; other projects cover viewport input.');
+  const errors = captureRuntimeErrors(page);
+  await page.goto('/?seed=817&mode=basic&type=C&difficulty=guided&values=varied');
+
+  const components = page.locator('[data-component-id]');
+  await components.nth(0).focus();
+  await page.keyboard.press('Enter');
+  await components.nth(1).focus();
+  await page.keyboard.press('Space');
+
+  const beforeSeries = await components.count();
+  await page.keyboard.press('q');
+  await expect(components).toHaveCount(beforeSeries - 1);
+
+  const remaining = page.locator('[data-component-id]');
+  await remaining.nth(0).focus();
+  await page.keyboard.press('Enter');
+  await remaining.nth(1).focus();
+  await page.keyboard.press('Space');
+
+  const beforeNestedSeries = await remaining.count();
+  await page.keyboard.press('q');
+  await expect(remaining).toHaveCount(beforeNestedSeries - 1);
+
+  const finalPair = page.locator('[data-component-id]');
+  await finalPair.nth(0).focus();
+  await page.keyboard.press('Enter');
+  await finalPair.nth(1).focus();
+  await page.keyboard.press('Space');
+
+  const beforeParallel = await finalPair.count();
+  await page.keyboard.press('e');
+  await expect(finalPair).toHaveCount(beforeParallel - 1);
+  expect(errors).toEqual([]);
+});
+
 test('advanced capacitor challenge remains manually solvable after switch pruning', async ({ page }, testInfo) => {
   test.skip(testInfo.project.name !== 'chromium', 'Full topology matrix runs once; viewport coverage is provided by the other tests.');
   const errors = captureRuntimeErrors(page);

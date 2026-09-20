@@ -42,6 +42,7 @@ import {
   readProgress,
   writeProgress,
 } from './lib/gameState';
+import { getReductionAction } from './lib/keyboardShortcuts';
 import { getQaConfig } from './lib/qaConfig';
 
 const INITIAL_SEED = Date.now();
@@ -538,11 +539,11 @@ function App() {
       );
       if (isEditing || selectedIds.length < 2 || isSolved) return;
 
-      const key = event.key.toLowerCase();
-      if (key !== 'q' && key !== 'e') return;
+      const action = getReductionAction(event);
+      if (!action) return;
 
       event.preventDefault();
-      handleCombine(key === 'q' ? 'series' : 'parallel');
+      handleCombine(action);
     };
 
     window.addEventListener('keydown', handleReductionShortcut);
