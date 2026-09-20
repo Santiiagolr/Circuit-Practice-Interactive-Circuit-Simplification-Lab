@@ -1,0 +1,24 @@
+import { fireEvent, render, screen } from '@testing-library/react';
+import { expect, it, vi } from 'vitest';
+import CircuitSVG from '../../src/components/CircuitSVG';
+import GridCircuitSVG from '../../src/components/GridCircuitSVG';
+
+it('supports direct pointer and keyboard selection in the basic SVG', () => {
+  const onSelect = vi.fn();
+  const tree = { type: 'leaf', id: 'r1', compType: 'R', label: 'R1', val: 10 };
+  const { container } = render(<CircuitSVG tree={tree} selectedIds={[]} onSelect={onSelect} />);
+  const component = screen.getByRole('button', { name: /Resistencia R1/ });
+  expect(container.querySelector('[data-component-hitbox]')).toHaveAttribute('pointer-events', 'all');
+  fireEvent.click(component);
+  fireEvent.keyDown(component, { key: 'Enter' });
+  expect(onSelect).toHaveBeenNthCalledWith(1, 'r1');
+  expect(onSelect).toHaveBeenNthCalledWith(2, 'r1');
+});
+
+it('renders advanced hitboxes with accessible component metadata', () => {
+  const nodes = [{ id: 'A', x: 0, y: 0, terminal: 'A' }, { id: 'B', x: 4, y: 0, terminal: 'B' }];
+  const edges = [{ id: 'e1', from: 'A', to: 'B', compType: 'C', label: 'C1', val: 10, route: nodes }];
+  const { container } = render(<GridCircuitSVG nodes={nodes} edges={edges} selectedIds={[]} onSelect={() => {}} />);
+  expect(screen.getByRole('button', { name: /Capacitor C1/ })).toBeInTheDocument();
+  expect(container.querySelector('[data-component-type="C"]')).toBeInTheDocument();
+});

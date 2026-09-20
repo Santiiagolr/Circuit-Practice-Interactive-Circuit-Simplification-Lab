@@ -32,6 +32,8 @@ The challenge ends when the network is manually reduced to one equivalent compon
 - Optional illustrative current-flow animation for resistor exercises.
 - Responsive SVG rendering for desktop, tablet, and mobile screens.
 - Keyboard support for selecting components and operating the main controls.
+- Optional full-screen workbench and mobile **Enlarge / Fit** controls.
+- Offline self-hosted typography: no external font request is required.
 - No Delta-Star transformations.
 
 ### Technology stack
@@ -42,6 +44,9 @@ The challenge ends when the network is manually reduced to one equivalent compon
 - SVG for interactive circuit rendering
 - Lucide React for icons
 - Oxlint for static validation
+- Vitest and Testing Library for unit/component tests
+- Playwright and axe-core for browser, visual, mobile, and accessibility QA
+- Lighthouse for mobile performance and accessibility budgets
 
 ### Requirements
 
@@ -87,7 +92,32 @@ The launcher source is available at `tools/CircuitPracticeLauncher/CircuitPracti
 | `npm run build` | Creates the optimized production build. |
 | `npm run preview` | Serves the production build locally. |
 | `npm run lint` | Runs Oxlint on the project. |
+| `npm run test:unit` | Runs physics, topology, state, persistence, SVG, and component tests. |
 | `npm run test:circuits` | Runs deterministic generation, solvability, diversity, and switch-deletion smoke tests. |
+| `npm run test:stress` | Generates 2,400 circuits by default and validates them against an independent evaluator. |
+| `npm run test:e2e` | Runs browser flows on Chromium, Edge, WebKit, Android, iPhone, tablet, and mobile landscape. |
+| `npm run test:e2e:firefox` | Runs the same flow on Playwright Firefox. |
+| `npm run test:visual` | Compares approved desktop, tablet, and iPhone screenshots. |
+| `npm run test:a11y` | Runs axe-core and dialog/focus checks. |
+| `npm run test:lighthouse` | Enforces mobile performance ≥85 and accessibility ≥95. |
+| `npm run test:launcher` | Tests the Windows launcher, port fallback, paths with spaces, and cleanup. |
+| `npm run qa` | Runs the complete local quality gate. |
+
+### Reproducible QA mode
+
+Query parameters are accepted only by development/test builds. They never add a solver and are ignored by production builds:
+
+```text
+?seed=2026&mode=advanced&type=C&difficulty=challenge&values=equal
+```
+
+Supported values are `basic|advanced`, `R|C`, `guided|practice|challenge`, and `varied|equal`. To update approved screenshots intentionally, run:
+
+```bash
+npm run test:visual -- --update-snapshots
+```
+
+Firefox is kept as an explicit project and command. On Windows hosts where the Playwright Firefox binary reports a side-by-side runtime error, install/repair the Microsoft Visual C++ runtime and rerun `npm run test:e2e:firefox`.
 
 ### How to play
 
@@ -131,10 +161,15 @@ src/
 ├── index.css                   # Visual system, responsive layout, and accessibility
 ├── components/
 │   ├── CircuitSVG.jsx          # Basic mode rendering
-│   └── GridCircuitSVG.jsx      # Advanced mode rendering
+│   ├── GridCircuitSVG.jsx      # Advanced mode rendering
+│   ├── CircuitViewport.jsx     # Fit/zoom viewport shared by both renderers
+│   └── AppErrorBoundary.jsx    # Safe recovery without deleting progress
 └── lib/
     ├── circuit.js              # AST and Basic mode operations
-    └── graphCircuit.js         # Graphs, topology, and Advanced mode operations
+    ├── graphCircuit.js         # Graphs, topology, and Advanced mode operations
+    ├── gameState.js            # Tested interaction reducer and persistence
+    ├── qaConfig.js             # Development-only reproducible parameters
+    └── svgGeometry.js          # Pure route, symbol, label, and hitbox geometry
 ```
 
 Mathematical logic and topology validation live in `src/lib/`. The SVG components handle visual representation and interaction while keeping domain rules separate from presentation.
@@ -146,7 +181,7 @@ Before publishing changes, run:
 ```bash
 npm run lint
 npm run build
-npm run test:circuits
+npm run qa
 ```
 
 The build creates the `dist/` directory, which is excluded from version control by `.gitignore`.
@@ -180,6 +215,8 @@ El desafío termina cuando la red se reduce manualmente a un único componente e
 - Animación opcional e ilustrativa del flujo de corriente para ejercicios de resistencias.
 - Renderizado SVG responsive para escritorio, tablet y móvil.
 - Soporte de teclado para seleccionar componentes y operar los controles principales.
+- Mesa de trabajo en pantalla completa y controles móviles **Ampliar / Ajustar**.
+- Tipografías locales: la aplicación no depende de Google Fonts ni de conexión externa.
 - No utiliza transformaciones Delta-Estrella.
 
 ### Requisitos e instalación
@@ -212,7 +249,30 @@ El código fuente del launcher está en `tools/CircuitPracticeLauncher/CircuitPr
 | `npm run build` | Genera la versión optimizada para producción. |
 | `npm run preview` | Sirve localmente la compilación de producción. |
 | `npm run lint` | Ejecuta Oxlint sobre el proyecto. |
+| `npm run test:unit` | Prueba física, topología, estado, persistencia, SVG y componentes React. |
 | `npm run test:circuits` | Ejecuta smoke tests deterministas de generación, reducibilidad, variedad y eliminación de interruptores. |
+| `npm run test:stress` | Genera 2.400 circuitos y los compara con un evaluador independiente. |
+| `npm run test:e2e` | Prueba Chromium, Edge, WebKit, Android, iPhone, tablet y móvil horizontal. |
+| `npm run test:e2e:firefox` | Ejecuta por separado la matriz de Firefox. |
+| `npm run test:visual` | Verifica snapshots aprobados de escritorio, tablet e iPhone. |
+| `npm run test:a11y` | Ejecuta axe-core y pruebas de foco/diálogo. |
+| `npm run test:lighthouse` | Exige rendimiento móvil ≥85 y accesibilidad ≥95. |
+| `npm run test:launcher` | Prueba rutas con espacios, dependencias faltantes, puertos y cierre del launcher. |
+| `npm run qa` | Ejecuta la compuerta integral de calidad. |
+
+### Modo QA reproducible
+
+Los parámetros de URL solo se habilitan en desarrollo/pruebas; no incorporan un solucionador y se ignoran en producción:
+
+```text
+?seed=2026&mode=advanced&type=C&difficulty=challenge&values=equal
+```
+
+Para actualizar intencionalmente los snapshots visuales:
+
+```bash
+npm run test:visual -- --update-snapshots
+```
 
 ### Cómo se juega
 

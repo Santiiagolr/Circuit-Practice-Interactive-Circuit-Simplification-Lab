@@ -14,14 +14,25 @@ internal static class CircuitPracticeLauncher
     private const int LastPort = 5199;
 
     [STAThread]
-    private static int Main()
+    private static int Main(string[] arguments)
     {
         Console.WriteLine("Circuit Practice");
         Console.WriteLine("================");
 
-        string projectDirectory = AppDomain.CurrentDomain.BaseDirectory.TrimEnd(
+        string configuredProjectDirectory = Environment.GetEnvironmentVariable("CIRCUIT_PRACTICE_PROJECT_DIR");
+        string projectDirectory = (string.IsNullOrWhiteSpace(configuredProjectDirectory)
+            ? AppDomain.CurrentDomain.BaseDirectory
+            : configuredProjectDirectory).TrimEnd(
             Path.DirectorySeparatorChar,
             Path.AltDirectorySeparatorChar);
+
+        if (Array.IndexOf(arguments, "--self-test") >= 0)
+        {
+            Console.WriteLine("Project directory: " + projectDirectory);
+            Console.WriteLine("npm: " + (FindNpmCommand() ?? "not found"));
+            Console.WriteLine("Available port: " + FindAvailablePort());
+            return 0;
+        }
 
         if (!File.Exists(Path.Combine(projectDirectory, "package.json")))
         {
@@ -49,6 +60,24 @@ internal static class CircuitPracticeLauncher
             return 1;
         }
 
+        string nodePath = Path.Combine(Path.GetDirectoryName(npmPath), "node.exe");
+        if (!File.Exists(nodePath))
+        {
+            ShowError(
+                "Se encontro npm, pero no node.exe en la misma instalacion.\n\n" +
+                "Repara la instalacion de Node.js y vuelve a intentarlo.");
+            return 1;
+        }
+
+        string viteEntry = Path.Combine(projectDirectory, "node_modules", "vite", "bin", "vite.js");
+        if (!File.Exists(viteEntry))
+        {
+            ShowError(
+                "No se encontro Vite dentro de node_modules.\n\n" +
+                "Ejecuta npm install en la carpeta del proyecto.");
+            return 1;
+        }
+
         Process viteProcess = null;
 
         try
@@ -62,16 +91,22 @@ internal static class CircuitPracticeLauncher
                 return 1;
             }
 
+            string portFile = Environment.GetEnvironmentVariable("CIRCUIT_PRACTICE_PORT_FILE");
+            if (!string.IsNullOrWhiteSpace(portFile))
+            {
+                File.WriteAllText(portFile, port.ToString());
+            }
+
             string localUrl = "http://127.0.0.1:" + port + "/";
 
             ProcessStartInfo startInfo = new ProcessStartInfo
             {
-                FileName = Environment.GetEnvironmentVariable("ComSpec") ?? "cmd.exe",
-                Arguments = "/d /c \"\"" + npmPath +
-                            "\" run dev -- --host 127.0.0.1 --port " + port + " --strictPort\"",
+                FileName = nodePath,
+                Arguments = QuoteArgument(viteEntry)
+                            + " --host 127.0.0.1 --port " + port + " --strictPort",
                 WorkingDirectory = projectDirectory,
                 UseShellExecute = false,
-                CreateNoWindow = false
+                CreateNoWindow = IsEnabled("CIRCUIT_PRACTICE_NO_WINDOW")
             };
 
             Console.WriteLine("Iniciando Vite...");
@@ -104,11 +139,14 @@ internal static class CircuitPracticeLauncher
                 return 1;
             }
 
-            Process.Start(new ProcessStartInfo
+            if (!IsEnabled("CIRCUIT_PRACTICE_NO_BROWSER"))
             {
-                FileName = localUrl,
-                UseShellExecute = true
-            });
+                Process.Start(new ProcessStartInfo
+                {
+                    FileName = localUrl,
+                    UseShellExecute = true
+                });
+            }
 
             bool stopRequested = false;
             ConsoleCancelEventHandler cancelHandler = delegate(object sender, ConsoleCancelEventArgs args)
@@ -129,6 +167,12 @@ internal static class CircuitPracticeLauncher
             Console.WriteLine("El navegador se abrira automaticamente.");
             Console.WriteLine("Manten esta ventana abierta. Presiona Ctrl+C para detener Vite.");
 
+            if (IsEnabled("CIRCUIT_PRACTICE_EXIT_AFTER_READY"))
+            {
+                StopProcessTree(viteProcess);
+                return 0;
+            }
+
             while (!stopRequested && viteProcess != null && !viteProcess.HasExited)
             {
                 Thread.Sleep(500);
@@ -148,6 +192,14 @@ internal static class CircuitPracticeLauncher
         try
         {
             if (process == null || process.HasExited)
+            {
+                return;
+            }
+
+            // Vite is launched as the Node process itself, so a direct kill is
+            // deterministic and avoids leaving it detached from an npm/cmd shim.
+            process.Kill();
+            if (process.WaitForExit(5000))
             {
                 return;
             }
@@ -227,6 +279,17 @@ internal static class CircuitPracticeLauncher
 
     private static string FindNpmCommand()
     {
+        if (IsEnabled("CIRCUIT_PRACTICE_DISABLE_NPM_LOOKUP"))
+        {
+            return null;
+        }
+
+        string configuredNpm = Environment.GetEnvironmentVariable("CIRCUIT_PRACTICE_NPM_PATH");
+        if (!string.IsNullOrWhiteSpace(configuredNpm))
+        {
+            return File.Exists(configuredNpm) ? configuredNpm : null;
+        }
+
         List<string> searchDirectories = new List<string>();
         string pathEnvironment = Environment.GetEnvironmentVariable("PATH") ?? string.Empty;
 
@@ -262,8 +325,26 @@ internal static class CircuitPracticeLauncher
         return null;
     }
 
+    private static bool IsEnabled(string variableName)
+    {
+        string value = Environment.GetEnvironmentVariable(variableName);
+        return string.Equals(value, "1", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(value, "true", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static string QuoteArgument(string value)
+    {
+        return "\"" + value.Replace("\"", "\\\"") + "\"";
+    }
+
     private static void ShowError(string message)
     {
+        if (IsEnabled("CIRCUIT_PRACTICE_NONINTERACTIVE"))
+        {
+            Console.Error.WriteLine(message);
+            return;
+        }
+
         MessageBox.Show(
             message,
             "Circuit Practice",

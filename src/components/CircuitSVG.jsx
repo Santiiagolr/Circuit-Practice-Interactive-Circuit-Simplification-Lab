@@ -1,5 +1,6 @@
 import React, { useId, useMemo } from 'react';
 import { formatValue } from '../lib/circuit';
+import CircuitViewport from './CircuitViewport';
 
 const COMP_W = 68;
 const COMP_H = 38;
@@ -257,6 +258,7 @@ function RenderNode({ node, x, y, selectedIds, onSelect, isMessy, showFlow, filt
     return (
       <g
         data-component-id={node.id}
+        data-component-type={node.compType}
         transform={'translate(' + x + ', ' + y + ')'}
         className={'circuit-component ' + (isSelected ? 'is-selected ' : '') + (isEquivalent ? 'is-equivalent' : '')}
         role="button"
@@ -279,7 +281,7 @@ function RenderNode({ node, x, y, selectedIds, onSelect, isMessy, showFlow, filt
             rx="13"
             fill="transparent"
             data-component-hitbox="true"
-            pointerEvents="none"
+            pointerEvents="all"
           />
           <rect
             x="0"
@@ -304,7 +306,7 @@ function RenderNode({ node, x, y, selectedIds, onSelect, isMessy, showFlow, filt
           <text x={node.w / 2} y="-9" textAnchor="middle" fontSize="10.5" fontWeight="700" fill={COLORS.ink} fontFamily="'Space Grotesk', sans-serif" pointerEvents="none">
             {node.label}
           </text>
-          <text x={node.w / 2} y={node.h + 15} textAnchor="middle" fontSize="9.5" fontWeight="600" fill={isSelected ? '#168F82' : '#60788B'} fontFamily="'IBM Plex Mono', monospace" pointerEvents="none">
+          <text x={node.w / 2} y={node.h + 15} textAnchor="middle" fontSize="9.5" fontWeight="600" fill={isSelected ? '#0B746A' : '#526B7F'} fontFamily="'IBM Plex Mono', monospace" pointerEvents="none">
             {formatValue(node.val, node.compType)}
           </text>
         </g>
@@ -422,7 +424,7 @@ function BatterySymbol({ x, y }) {
       <line x1="8" y1="-25" x2="8" y2="25" stroke="#183047" strokeWidth="3" strokeLinecap="round" vectorEffect="non-scaling-stroke" />
       <text x="-24" y="1" textAnchor="middle" dominantBaseline="middle" fontSize="15" fontWeight="800" fill="#39546A" fontFamily="'Space Grotesk', sans-serif">−</text>
       <text x="25" y="1" textAnchor="middle" dominantBaseline="middle" fontSize="15" fontWeight="800" fill="#D98C42" fontFamily="'Space Grotesk', sans-serif">+</text>
-      <text x="0" y="42" textAnchor="middle" fontSize="12" fontWeight="700" fill="#60788B" fontFamily="'IBM Plex Mono', monospace">FUENTE · 12 V</text>
+      <text x="0" y="42" textAnchor="middle" fontSize="12" fontWeight="700" fill="#526B7F" fontFamily="'IBM Plex Mono', monospace">FUENTE · 12 V</text>
     </g>
   );
 }
@@ -442,7 +444,7 @@ export default function CircuitSVG({ tree, selectedIds, onSelect, isMessy, showF
   };
 
   return (
-    <div className="circuit-scroll circuit-scroll--fit">
+    <CircuitViewport>
       <svg
         className="circuit-svg"
         width={width}
@@ -481,6 +483,6 @@ export default function CircuitSVG({ tree, selectedIds, onSelect, isMessy, showF
           filterIds={filterIds}
         />
       </svg>
-    </div>
+    </CircuitViewport>
   );
 }

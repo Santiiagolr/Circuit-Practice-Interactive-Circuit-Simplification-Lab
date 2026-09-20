@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useReducer, useRef, useState } from 'react';
 import {
   Activity,
   ArrowRight,
@@ -34,42 +34,18 @@ import {
 } from './lib/graphCircuit';
 import CircuitSVG from './components/CircuitSVG';
 import GridCircuitSVG from './components/GridCircuitSVG';
+import {
+  applyReward,
+  calculateReward,
+  INITIAL_INTERACTION_STATE,
+  interactionReducer,
+  readProgress,
+  writeProgress,
+} from './lib/gameState';
+import { getQaConfig } from './lib/qaConfig';
 
-const PROGRESS_KEY = 'circuit-practice:progress:v1';
-const POINTS_BY_DIFFICULTY = {
-  guided: 10,
-  practice: 20,
-  challenge: 35,
-};
-
-const EMPTY_PROGRESS = {
-  score: 0,
-  streak: 0,
-  bestStreak: 0,
-  completed: 0,
-};
 const INITIAL_SEED = Date.now();
-
-function safeProgressValue(value) {
-  const numeric = Number(value);
-  return Number.isFinite(numeric) && numeric >= 0 ? Math.floor(numeric) : 0;
-}
-
-function readProgress() {
-  if (typeof window === 'undefined') return EMPTY_PROGRESS;
-
-  try {
-    const stored = JSON.parse(window.localStorage.getItem(PROGRESS_KEY) || '{}');
-    return {
-      score: safeProgressValue(stored.score),
-      streak: safeProgressValue(stored.streak),
-      bestStreak: safeProgressValue(stored.bestStreak),
-      completed: safeProgressValue(stored.completed),
-    };
-  } catch {
-    return EMPTY_PROGRESS;
-  }
-}
+const INITIAL_CONFIG = getQaConfig(INITIAL_SEED);
 
 function makeHistoryKey(mode, compType, difficulty, valueMode) {
   return [mode, compType, difficulty, valueMode].join(':');
@@ -174,7 +150,7 @@ function VictoryOverlay({ eqVal, compType, steps, reward, onNext }) {
           <span>+{reward?.points || 0} puntos</span>
           <span><Flame size={14} /> Racha {reward?.streak || 0}</span>
         </div>
-        <button className="button button--primary button--large" onClick={onNext}>
+        <button className="button button--primary button--large" onClick={onNext} autoFocus>
           Medir otro circuito <ArrowRight size={18} />
         </button>
       </div>
@@ -275,37 +251,34 @@ function ExerciseActions({
 
 function App() {
   const feedbackKeyRef = useRef(0);
+  const actionLockRef = useRef(false);
   const historyRef = useRef({});
   const historyInitializedRef = useRef(false);
   const circuitPanelRef = useRef(null);
 
-  const [mode, setMode] = useState('basic');
-  const [compType, setCompType] = useState('R');
-  const [difficulty, setDifficulty] = useState('guided');
+  const [mode, setMode] = useState(INITIAL_CONFIG.mode);
+  const [compType, setCompType] = useState(INITIAL_CONFIG.compType);
+  const [difficulty, setDifficulty] = useState(INITIAL_CONFIG.difficulty);
   const [isWorkspaceFullscreen, setIsWorkspaceFullscreen] = useState(false);
   const [showFormulas, setShowFormulas] = useState(false);
   const [showFlow, setShowFlow] = useState(true);
-  const [valueMode, setValueMode] = useState('varied');
+  const [valueMode, setValueMode] = useState(INITIAL_CONFIG.valueMode);
   const [basicExercise, setBasicExercise] = useState(() => (
-    generateBasicExercise('R', {
-      difficulty: 'guided',
-      seed: INITIAL_SEED,
-      valueMode: 'varied',
+    generateBasicExercise(INITIAL_CONFIG.compType, {
+      difficulty: INITIAL_CONFIG.difficulty,
+      seed: INITIAL_CONFIG.seed,
+      valueMode: INITIAL_CONFIG.valueMode,
     })
   ));
   const [graphExercise, setGraphExercise] = useState(() => (
-    generateGridCircuit('R', 'varied', {
-      difficulty: 'guided',
-      seed: INITIAL_SEED + 1,
+    generateGridCircuit(INITIAL_CONFIG.compType, INITIAL_CONFIG.valueMode, {
+      difficulty: INITIAL_CONFIG.difficulty,
+      seed: INITIAL_CONFIG.seed,
     })
   ));
-  const [selectedIds, setSelectedIds] = useState([]);
-  const [feedback, setFeedback] = useState(null);
-  const [steps, setSteps] = useState(0);
-  const [mistakes, setMistakes] = useState(0);
-  const [exerciseHadMistake, setExerciseHadMistake] = useState(false);
-  const [currentSeed, setCurrentSeed] = useState(INITIAL_SEED);
-  const [reward, setReward] = useState(null);
+  const [interaction, dispatchInteraction] = useReducer(interactionReducer, INITIAL_INTERACTION_STATE);
+  const { selectedIds, feedback, steps, mistakes, exerciseHadMistake, reward } = interaction;
+  const [currentSeed, setCurrentSeed] = useState(INITIAL_CONFIG.seed);
   const [progress, setProgress] = useState(readProgress);
 
   const tree = basicExercise?.tree;
@@ -317,7 +290,7 @@ function App() {
   const flowActive = showFlow && compType === 'R';
 
   useEffect(() => {
-    window.localStorage.setItem(PROGRESS_KEY, JSON.stringify(progress));
+    writeProgress(progress);
   }, [progress]);
 
   useEffect(() => {
@@ -328,6 +301,15 @@ function App() {
     document.addEventListener('fullscreenchange', handleFullscreenChange);
     return () => document.removeEventListener('fullscreenchange', handleFullscreenChange);
   }, []);
+
+  useEffect(() => {
+    if (!isWorkspaceFullscreen || document.fullscreenElement) return undefined;
+    const exitCssFullscreen = (event) => {
+      if (event.key === 'Escape') setIsWorkspaceFullscreen(false);
+    };
+    window.addEventListener('keydown', exitCssFullscreen);
+    return () => window.removeEventListener('keydown', exitCssFullscreen);
+  }, [isWorkspaceFullscreen]);
 
   const toggleWorkspaceFullscreen = useCallback(async () => {
     if (document.fullscreenElement === circuitPanelRef.current) {
@@ -360,18 +342,16 @@ function App() {
   useEffect(() => {
     if (historyInitializedRef.current) return;
 
-    historyRef.current[makeHistoryKey('basic', 'R', 'guided', 'varied')] = [basicExercise.signature];
-    historyRef.current[makeHistoryKey('advanced', 'R', 'guided', 'varied')] = [graphExercise.signature];
+    historyRef.current[makeHistoryKey('basic', compType, difficulty, valueMode)] = [basicExercise.signature];
+    historyRef.current[makeHistoryKey('advanced', compType, difficulty, valueMode)] = [graphExercise.signature];
     historyInitializedRef.current = true;
-  }, [basicExercise.signature, graphExercise.signature]);
+  }, [basicExercise.signature, compType, difficulty, graphExercise.signature, valueMode]);
 
   const publishFeedback = useCallback((type, text, val) => {
     feedbackKeyRef.current += 1;
-    setFeedback({
-      type,
-      text,
-      val,
-      key: feedbackKeyRef.current,
+    dispatchInteraction({
+      type: 'feedback',
+      feedback: { type, text, val, key: feedbackKeyRef.current },
     });
   }, []);
 
@@ -423,12 +403,7 @@ function App() {
     }
 
     setCurrentSeed(nextSeed);
-    setSelectedIds([]);
-    setFeedback(null);
-    setReward(null);
-    setSteps(0);
-    setMistakes(0);
-    setExerciseHadMistake(false);
+    dispatchInteraction({ type: 'reset' });
     setShowFlow((current) => targetType === 'R' ? current : false);
 
     if (options.breakStreak !== false) {
@@ -465,50 +440,29 @@ function App() {
 
   const handleSelect = useCallback((id) => {
     if (isSolved) return;
-    if (!id) {
-      setSelectedIds([]);
-      return;
-    }
-
-    setSelectedIds((current) => (
-      current.includes(id)
-        ? current.filter((item) => item !== id)
-        : current.concat(id)
-    ));
-    setFeedback(null);
+    dispatchInteraction({ type: 'toggle-selection', id });
   }, [isSolved]);
 
   const setError = useCallback((message) => {
-    setExerciseHadMistake(true);
-    setMistakes((current) => current + 1);
+    feedbackKeyRef.current += 1;
+    dispatchInteraction({
+      type: 'error',
+      feedback: { type: 'error', text: message, key: feedbackKeyRef.current },
+    });
     setProgress((current) => ({ ...current, streak: 0 }));
-    publishFeedback('error', message);
-  }, [publishFeedback]);
+  }, []);
 
   const completeExercise = useCallback((value) => {
-    const clean = !exerciseHadMistake;
-    const nextStreak = clean ? progress.streak + 1 : 0;
-    const basePoints = POINTS_BY_DIFFICULTY[difficulty] || POINTS_BY_DIFFICULTY.guided;
-    const streakBonus = clean ? Math.min(30, Math.max(0, (nextStreak - 1) * 5)) : 0;
-    const earnedPoints = basePoints + streakBonus;
-
-    setProgress((current) => ({
-      ...current,
-      score: current.score + earnedPoints,
-      streak: nextStreak,
-      bestStreak: Math.max(current.bestStreak, nextStreak),
-      completed: current.completed + 1,
-    }));
-    setReward({
-      points: earnedPoints,
-      streak: nextStreak,
-      clean,
-    });
+    const nextReward = calculateReward(progress, difficulty, exerciseHadMistake);
+    setProgress((current) => applyReward(current, nextReward));
+    dispatchInteraction({ type: 'complete', reward: nextReward });
     publishFeedback('victory', 'Medición correcta. El equivalente quedó conectado a la batería.', value);
   }, [difficulty, exerciseHadMistake, progress, publishFeedback]);
 
   const handleCombine = useCallback((action) => {
-    if (isSolved) return;
+    if (isSolved || actionLockRef.current) return;
+    actionLockRef.current = true;
+    queueMicrotask(() => { actionLockRef.current = false; });
 
     if (mode === 'basic') {
       const result = validateSelection(tree, selectedIds, action);
@@ -519,9 +473,7 @@ function App() {
 
       const nextTree = combineNodes(tree, selectedIds, action, compType);
       setBasicExercise((current) => ({ ...current, tree: nextTree }));
-      setSelectedIds([]);
-      const nextStepCount = steps + 1;
-      setSteps(nextStepCount);
+      dispatchInteraction({ type: 'step' });
 
       if (nextTree.type === 'leaf') {
         completeExercise(nextTree.val);
@@ -552,9 +504,7 @@ function App() {
       nodes: nextGraph.nodes,
       edges: nextGraph.edges,
     }));
-    setSelectedIds([]);
-    const nextStepCount = steps + 1;
-    setSteps(nextStepCount);
+    dispatchInteraction({ type: 'step' });
 
     if (nextGraph.edges.length === 1) {
       completeExercise(nextGraph.edges[0].val);
@@ -574,7 +524,6 @@ function App() {
     publishFeedback,
     selectedIds,
     setError,
-    steps,
     tree,
   ]);
 
@@ -618,9 +567,7 @@ function App() {
       nodes: nextGraph.nodes,
       edges: nextGraph.edges,
     }));
-    setSelectedIds([]);
-    const nextStepCount = steps + 1;
-    setSteps(nextStepCount);
+    dispatchInteraction({ type: 'step' });
 
     if (nextGraph.edges.length === 1) {
       completeExercise(nextGraph.edges[0].val);
@@ -638,7 +585,6 @@ function App() {
     publishFeedback,
     selectedIds,
     setError,
-    steps,
   ]);
 
   const openSwitchSelected = useMemo(() => (
@@ -662,7 +608,10 @@ function App() {
   if (mode === 'basic' && !tree) return null;
 
   return (
-    <div className={'app-shell' + (isWorkspaceFullscreen ? ' is-workbench-fullscreen' : '')}>
+    <div
+      className={'app-shell' + (isWorkspaceFullscreen ? ' is-workbench-fullscreen' : '')}
+      data-qa-mode={INITIAL_CONFIG.enabled ? 'true' : undefined}
+    >
       <header className="topbar">
         <div className="topbar-main">
           <div className="brand-lockup">

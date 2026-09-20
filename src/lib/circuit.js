@@ -290,12 +290,23 @@ export function cleanTree(node) {
   return { ...node, children: flattened };
 }
 
+function cloneCircuitTree(node) {
+  if (node.type === 'leaf') return { ...node };
+  return {
+    ...node,
+    children: node.children.map(cloneCircuitTree),
+    gaps: Array.isArray(node.gaps) ? [...node.gaps] : node.gaps,
+  };
+}
+
 export function combineNodes(tree, ids, action, compType) {
   const { valid, parent } = validateSelection(tree, ids, action);
   if (!valid) return tree;
 
   const selectedIds = new Set(ids);
-  const newTree = JSON.parse(JSON.stringify(tree));
+  // JSON cloning turns Infinity into null. Capacitor wires intentionally use
+  // Infinity, so preserve numeric sentinels with a structural clone.
+  const newTree = cloneCircuitTree(tree);
 
   function process(node) {
     if (node.id === parent.id) {

@@ -1,5 +1,7 @@
 import React, { useId, useMemo } from 'react';
 import { formatValue } from '../lib/graphCircuit';
+import { makeEdgeGeometry, pointsToPath } from '../lib/svgGeometry';
+import CircuitViewport from './CircuitViewport';
 
 // The drawing uses a compact, regular coordinate system. The graph generator
 // owns the topology and the exact route; this component maps it to pixels and
@@ -123,90 +125,9 @@ function BatterySymbol({ x, y, angle = 0, filterId }) {
       <line x1="8" y1="-23" x2="8" y2="23" stroke="#183047" strokeWidth="3" strokeLinecap="round" vectorEffect="non-scaling-stroke" />
       <text x="-24" y="1" textAnchor="middle" dominantBaseline="middle" fontSize="15" fontWeight="800" fill="#39546A" fontFamily="'Space Grotesk', sans-serif">−</text>
       <text x="25" y="1" textAnchor="middle" dominantBaseline="middle" fontSize="15" fontWeight="800" fill="#D98C42" fontFamily="'Space Grotesk', sans-serif">+</text>
-      <text x="0" y="39" textAnchor="middle" fontSize="11" fontWeight="700" fill="#60788B" fontFamily="'IBM Plex Mono', monospace">FUENTE · 12 V</text>
+      <text x="0" y="39" textAnchor="middle" fontSize="11" fontWeight="700" fill="#526B7F" fontFamily="'IBM Plex Mono', monospace">FUENTE · 12 V</text>
     </g>
   );
-}
-
-function compactPoints(points) {
-  return points.filter((point, index) => {
-    if (index === 0) return true;
-    const previous = points[index - 1];
-    return point.x !== previous.x || point.y !== previous.y;
-  });
-}
-
-function pointsToPath(points) {
-  return compactPoints(points).map((point, index) => (
-    (index === 0 ? 'M ' : 'L ') + point.x + ' ' + point.y
-  )).join(' ');
-}
-
-function getLongestSegment(points) {
-  let longest = null;
-
-  for (let index = 0; index < points.length - 1; index += 1) {
-    const first = points[index];
-    const second = points[index + 1];
-    const length = Math.hypot(second.x - first.x, second.y - first.y);
-    if (!longest || length > longest.length) {
-      longest = { index, first, second, length };
-    }
-  }
-
-  return longest;
-}
-
-function moveAlong(first, second, distance) {
-  const length = Math.hypot(second.x - first.x, second.y - first.y);
-  if (length < 1) return { ...first };
-  return {
-    x: first.x + ((second.x - first.x) / length) * distance,
-    y: first.y + ((second.y - first.y) / length) * distance,
-  };
-}
-
-function makeEdgeGeometry(routePoints) {
-  const route = compactPoints(routePoints || []);
-  const segment = getLongestSegment(route);
-  if (!segment || segment.length < 1) return null;
-
-  const symbolLength = Math.min(SYMBOL_LEN, segment.length * 0.58);
-  const symbolHalf = symbolLength / 2;
-  const center = moveAlong(segment.first, segment.second, segment.length / 2);
-  const symbolStart = moveAlong(segment.first, segment.second, segment.length / 2 - symbolHalf);
-  const symbolEnd = moveAlong(segment.first, segment.second, segment.length / 2 + symbolHalf);
-  const firstPathPoints = compactPoints(route.slice(0, segment.index + 1).concat(symbolStart));
-  const secondPathPoints = compactPoints([symbolEnd].concat(route.slice(segment.index + 1)));
-  const segmentDx = (segment.second.x - segment.first.x) / segment.length;
-  const segmentDy = (segment.second.y - segment.first.y) / segment.length;
-  let perpX = -segmentDy;
-  let perpY = segmentDx;
-  if (perpY > 0) {
-    perpX *= -1;
-    perpY *= -1;
-  }
-
-  const labelGap = Math.max(20, Math.min(28, segment.length * 0.14));
-  const labelCenterX = center.x + perpX * (labelGap + 5);
-  const labelCenterY = center.y + perpY * (labelGap + 5);
-
-  return {
-    angle: Math.atan2(segmentDy, segmentDx) * (180 / Math.PI),
-    centerX: center.x,
-    centerY: center.y,
-    symbolScale: symbolLength / SYMBOL_LEN,
-    visibleFirstPath: pointsToPath(firstPathPoints),
-    visibleSecondPath: pointsToPath(secondPathPoints),
-    labelX: labelCenterX,
-    labelY: labelCenterY - 6,
-    valueX: labelCenterX,
-    valueY: labelCenterY + 7,
-    labelPlateX: labelCenterX - 31,
-    labelPlateY: labelCenterY - 15,
-    hitWidth: Math.max(72, symbolLength + 30),
-    hitHeight: Math.max(42, Math.min(58, symbolLength + 18)),
-  };
 }
 
 function getEdgeLabel(edge) {
@@ -298,7 +219,7 @@ function renderFlowPath(path, key, flowClassName = 'flow-trace') {
 }
 
 function EdgeComponent({ edge, routePoints, isSelected, onClick, showFlow, filterIds }) {
-  const geometry = makeEdgeGeometry(routePoints);
+  const geometry = makeEdgeGeometry(routePoints, { symbolLength: SYMBOL_LEN });
   if (!geometry) return null;
 
   const isEquivalent = edge.label === 'Eq' || edge.layoutRole === 'equivalent';
@@ -314,6 +235,7 @@ function EdgeComponent({ edge, routePoints, isSelected, onClick, showFlow, filte
   return (
     <g
       data-component-id={edge.id}
+      data-component-type={edge.compType}
       className={'edge-component ' + (isSelected ? 'is-selected ' : '') + (isEquivalent ? 'is-equivalent edge-component--merge' : '')}
       role="button"
       tabIndex="0"
@@ -367,7 +289,7 @@ function EdgeComponent({ edge, routePoints, isSelected, onClick, showFlow, filte
       <text x={geometry.labelX} y={geometry.labelY} textAnchor="middle" dominantBaseline="middle" fontSize="10.5" fontWeight="700" fill={COLORS.ink} fontFamily="'Space Grotesk', sans-serif" pointerEvents="none">
         {edge.label}
       </text>
-      <text x={geometry.valueX} y={geometry.valueY} textAnchor="middle" dominantBaseline="middle" fontSize="9.5" fontWeight="600" fill={isSelected ? '#168F82' : '#60788B'} fontFamily="'IBM Plex Mono', monospace" pointerEvents="none">
+      <text x={geometry.valueX} y={geometry.valueY} textAnchor="middle" dominantBaseline="middle" fontSize="9.5" fontWeight="600" fill={isSelected ? '#0B746A' : '#526B7F'} fontFamily="'IBM Plex Mono', monospace" pointerEvents="none">
         {labelValue}
       </text>
     </g>
@@ -523,8 +445,7 @@ export default function GridCircuitSVG({
   };
 
   return (
-    <div
-      className="circuit-scroll circuit-scroll--fit"
+    <CircuitViewport
       data-layout-family={layoutMeta?.family || undefined}
       data-layout-orientation={layoutMeta?.orientation || undefined}
     >
@@ -565,6 +486,6 @@ export default function GridCircuitSVG({
           return <NodeDot key={node.id} node={node} px={position.x} py={position.y} />;
         })}
       </svg>
-    </div>
+    </CircuitViewport>
   );
 }
