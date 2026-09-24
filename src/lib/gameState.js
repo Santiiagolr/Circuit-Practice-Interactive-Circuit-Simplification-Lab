@@ -36,19 +36,20 @@ export function normalizeProgress(value = {}) {
   };
 }
 
-export function readProgress(storage = globalThis?.localStorage) {
-  if (!storage) return { ...EMPTY_PROGRESS };
-
+export function readProgress(storage) {
   try {
+    storage ??= globalThis.localStorage;
+    if (!storage) return { ...EMPTY_PROGRESS };
     return normalizeProgress(JSON.parse(storage.getItem(PROGRESS_KEY) || '{}'));
   } catch {
     return { ...EMPTY_PROGRESS };
   }
 }
 
-export function writeProgress(progress, storage = globalThis?.localStorage) {
-  if (!storage) return false;
+export function writeProgress(progress, storage) {
   try {
+    storage ??= globalThis.localStorage;
+    if (!storage) return false;
     storage.setItem(PROGRESS_KEY, JSON.stringify(normalizeProgress(progress)));
     return true;
   } catch {

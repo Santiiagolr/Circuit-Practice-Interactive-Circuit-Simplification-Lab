@@ -1,3 +1,5 @@
+import { astToNetwork, validateTopology } from './topology.js';
+
 export const COMPONENT_VALUES = [10, 20, 30, 40, 50, 60];
 
 export const DIFFICULTY_PRESETS = {
@@ -228,6 +230,10 @@ export function findCommonParent(tree, ids) {
 }
 
 export function validateSelection(tree, ids, action) {
+  tree = cleanTree(tree);
+  const network = astToNetwork(tree);
+  const topology = validateTopology(network.nodes, network.edges, ids, action);
+  if (!topology.valid) return topology;
   if (ids.length < 2) {
     return { valid: false, message: 'Selecciona al menos 2 componentes.' };
   }
@@ -306,7 +312,7 @@ export function combineNodes(tree, ids, action, compType) {
   const selectedIds = new Set(ids);
   // JSON cloning turns Infinity into null. Capacitor wires intentionally use
   // Infinity, so preserve numeric sentinels with a structural clone.
-  const newTree = cloneCircuitTree(tree);
+  const newTree = cloneCircuitTree(cleanTree(tree));
 
   function process(node) {
     if (node.id === parent.id) {

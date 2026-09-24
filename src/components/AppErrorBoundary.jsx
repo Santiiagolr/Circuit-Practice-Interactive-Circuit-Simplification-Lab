@@ -1,5 +1,6 @@
 import React from 'react';
 import { RefreshCw, TriangleAlert } from 'lucide-react';
+import { SESSION_KEY } from '../lib/session.js';
 
 export default class AppErrorBoundary extends React.Component {
   constructor(props) {
@@ -16,6 +17,9 @@ export default class AppErrorBoundary extends React.Component {
   }
 
   handleRecovery = () => {
+    try { window.localStorage.removeItem(SESSION_KEY); } catch { /* Recovery works without storage. */ }
+    // A deterministic failing QA seed must not reload into the same failure.
+    window.history.replaceState(null, '', window.location.pathname);
     this.setState({ error: null });
     window.location.reload();
   };

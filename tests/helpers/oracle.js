@@ -75,12 +75,22 @@ export function evaluateGraphNetwork(nodes, edges, compType) {
     to: uf.find(edge.to),
     conductance: compType === 'R' ? 1 / edge.val : edge.val,
   })).filter((edge) => edge.from !== edge.to);
-  const internal = [...new Set(ids.map(uf.find))].filter((id) => id !== source && id !== sink);
+  const reachable = new Set([source]);
+  for (let changed = true; changed;) {
+    changed = false;
+    for (const edge of reducedEdges) {
+      if (reachable.has(edge.from) && !reachable.has(edge.to)) { reachable.add(edge.to); changed = true; }
+      if (reachable.has(edge.to) && !reachable.has(edge.from)) { reachable.add(edge.from); changed = true; }
+    }
+  }
+  if (!reachable.has(sink)) return compType === 'R' ? Infinity : 0;
+  const internal = [...new Set(ids.map(uf.find))].filter((id) => reachable.has(id) && id !== source && id !== sink);
   const indexById = new Map(internal.map((id, index) => [id, index]));
   const matrix = internal.map(() => internal.map(() => 0));
   const vector = internal.map(() => 0);
 
   for (const edge of reducedEdges) {
+    if (!reachable.has(edge.from)) continue;
     for (const [nodeId, otherId] of [[edge.from, edge.to], [edge.to, edge.from]]) {
       const row = indexById.get(nodeId);
       if (row === undefined) continue;
@@ -89,7 +99,8 @@ export function evaluateGraphNetwork(nodes, edges, compType) {
       else if (otherId !== sink) matrix[row][indexById.get(otherId)] -= edge.conductance;
     }
   }
-  const voltages = solveLinear(matrix, vector) || [];
+  const voltages = solveLinear(matrix, vector);
+  if (!voltages) throw new Error('Independent nodal evaluator: singular system');
   let current = 0;
   for (const edge of reducedEdges) {
     if (edge.from !== source && edge.to !== source) continue;
@@ -104,5 +115,5 @@ export function evaluateGraphNetwork(nodes, edges, compType) {
 export function expectClose(actual, expected, tolerance = 1e-7) {
   if (actual === expected) return true;
   if (!Number.isFinite(actual) || !Number.isFinite(expected)) return false;
-  return Math.abs(actual - expected) <= tolerance * Math.max(1, Math.abs(expected));
+  return Math.abs(actual - expected) <= tolerance * Math.max(1e-30, Math.abs(expected));
 }

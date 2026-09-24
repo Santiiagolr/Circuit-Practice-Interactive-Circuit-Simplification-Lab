@@ -1,45 +1,45 @@
-# Contexto del Proyecto: Simulador de Circuitos (React + Vite)
+# Contexto actual — Circuit Practice
 
-Hola. Si estás leyendo esto, fuiste invocado para continuar el desarrollo, refinar y corregir bugs en este simulador de circuitos de física. A continuación tienes todo el contexto necesario para entender la arquitectura y los problemas pendientes.
+## Producto y límites
 
-## 1. ¿Qué es este programa y para qué sirve?
-Es una aplicación educativa diseñada para estudiantes universitarios de física. Su objetivo es generar circuitos aleatorios compuestos exclusivamente por Resistencias o Capacitores (el usuario elige cuál usar). El estudiante debe ir simplificando el circuito paso a paso (uniendo componentes en Serie o en Paralelo) hasta llegar a un único componente equivalente. 
+Aplicación local React/Vite para preparar parciales de circuitos de resistencias y capacitores. El estudiante selecciona manualmente 2 o más elementos y confirma Serie, Paralelo o la eliminación de un interruptor abierto. No hay solucionador automático ni transformaciones Delta-Estrella. La meta es un único equivalente entre los terminales de la batería.
 
-**Regla de oro:** El usuario pidió explícitamente que los circuitos DEBEN poder resolverse ÚNICAMENTE con transformaciones Serie y Paralelo. **NO se permite el uso de transformaciones Delta-Estrella (Δ-Y)** porque el estudiante no aprendió ese método.
+Configuración inicial: Entrenamiento, dificultad Básica, resistencias, valores numéricos variados, zigzag, cálculo manual y flujo ilustrativo desactivados. Las opciones, el ejercicio activo, el historial y un simulacro en curso se guardan localmente cuando `localStorage` está disponible.
 
-## 2. Arquitectura del Código
-El proyecto está construido en React y Vite. Utiliza TailwindCSS para los estilos. Todo el renderizado de los circuitos se hace a través de SVG puro (no hay librerías externas de canvas).
+## Arquitectura
 
-El programa tiene dos modos de juego distintos (que coexisten en `App.jsx`):
+- `src/lib/exercise.js`: contrato compartido de ejercicio, AST serie/paralelo, generación aleatoria con semilla, verificación eléctrica y reducciones atómicas. Dificultades: Básica 4–6 elementos/profundidad 2; Intermedia 7–10/profundidad 3; Avanzada 11–15/profundidad 5.
+- `src/lib/topology.js`: conversión AST-red y validación de grupos de 2 a N; distingue falsos paralelos, nodos de serie, terminales, cables, interruptores e IDs obsoletos.
+- `src/lib/technicalDrawing.js`: seis marcos geométricos, distribución de símbolos/rutas/etiquetas y verificación de colisiones antes de mostrar un diagrama.
+- `src/lib/values.js`: resistencias/capacitores, unidades, racionales exactos para múltiplos simbólicos y análisis restringido de respuestas ingresadas.
+- `src/lib/session.js`: reducer de sesión, selección, feedback, intentos, historial, manual de valores, deshacer/rehacer, parcial, temporizador, entrega única y recuperación de sesión.
+- `src/lib/gameState.js`: puntaje y racha con la clave/estructura anterior compatibles.
+- `src/lib/circuit.js` y `src/lib/graphCircuit.js`: APIs anteriores conservadas mediante adaptadores y regresiones.
+- `src/components/TechnicalCircuit.jsx`: SVG interactivo, símbolos R/C/W/S/batería, hitboxes, panel sincronizado, zoom/desplazamiento y selector de componentes cercanos.
+- `src/components/PracticeSettings.jsx`, `PracticeHistory.jsx`: configuración, revisión e historial.
+- `src/App.jsx`, `src/App.css`, `src/index.css`: composición, teclado, fullscreen nativo/CSS, responsive y accesibilidad.
 
-### Modo Básico (Árbol Recursivo)
-- **Archivos Clave:** `src/lib/circuit.js` y `src/components/CircuitSVG.jsx`
-- **Lógica:** Genera un AST (Abstract Syntax Tree) recursivo. Cada nodo es `leaf` (un componente), `series` o `parallel`. Es imposible que genere situaciones que requieran Delta-Estrella porque su naturaleza es estrictamente divisoria.
-- **Renderizado:** Dibuja cajas con líneas de conexión y distribuye los nodos de forma jerárquica.
+Atajos: `Q` = Serie, `E` = Paralelo, `Ctrl/Cmd+Z` = Deshacer, `Ctrl/Cmd+Shift+Z` = Rehacer. Se ignoran campos de entrada y estados bloqueados. En móvil la barra de acciones queda accesible durante el scroll; zoom y caption tienen filas propias para no tapar símbolos o etiquetas.
 
-### Modo Avanzado (Grilla / Malla de Grafos)
-- **Archivos Clave:** `src/lib/graphCircuit.js` y `src/components/GridCircuitSVG.jsx`
-- **Lógica:** Funciona como un grafo puro (`nodes` y `edges`). Debido a la restricción de "no usar Delta-Estrella", los circuitos no se generan de forma 100% procedimental pura. En su lugar, utiliza un sistema de **Plantillas Base (Templates)** hardcodeadas (Puentes modificados, Diamantes, Escaleras) que matemáticamente se sabe que son reducibles por Serie/Paralelo. Estas plantillas luego se espejan y se les asignan valores y cables de forma aleatoria para generar variedad.
-- **Renderizado:** Los componentes se dibujan sobre líneas (edges) utilizando coordenadas espaciales `(x, y)` multiplicadas por el tamaño de la grilla. Se usa un sistema de curvas de Bézier cuadráticas para cuando dos nodos tienen múltiples conexiones paralelas (para evitar que las líneas se superpongan visualmente).
+## QA local
 
-### Matemáticas y "Cables Vacíos" (Cortocircuitos)
-- Existe un 20% de probabilidad de que un componente se genere como un "Cable" (`compType === 'W'`).
-- Matemáticamente, un cable es una resistencia de `0Ω` o un capacitor de capacitancia `Infinity`.
-- Las funciones matemáticas (como `calcEq`) están adaptadas para no romper el programa (manejan divisiones por cero e Infinito correctamente).
+- `npm run lint`, `npm run build`, `npm run test:unit`: validación estática, compilación y pruebas Vitest/Testing Library.
+- `npm run test:circuits`: humo de motores/adaptadores anteriores, diversidad y switches.
+- `npm run test:stress`: 1.000 semillas para cada uno de 24 cruces de tipo, nivel, representación y distribución; dos órdenes válidos de reducción, geometría e independencia matemática.
+- `npm run test:e2e`: Chromium, Edge, WebKit, Pixel emulado, iPhone emulado, tablet y teléfono horizontal.
+- `npm run test:e2e:firefox`: Firefox por separado. En el host Windows observado, Playwright falla antes de abrir la app con `browserType.launch: spawn UNKNOWN`; revisar el runtime del navegador/Windows antes de adjudicar cobertura.
+- `npm run test:visual`: capturas de escritorio, tablet, teléfono vertical/horizontal y estados del ejercicio.
+- `npm run test:a11y`: axe-core sobre Chromium/WebKit y comprobaciones de foco/acciones.
+- `npm run test:lighthouse`: producción local, umbrales de rendimiento y accesibilidad.
+- `npm run test:launcher`: launcher de Windows, ruta con espacios, puertos, requisitos y cierre.
+- `npm run qa`: compuerta completa.
 
-## 3. Estado Actual y Problemas a Resolver (Tu Misión)
-El núcleo matemático y lógico funciona bien, pero el sistema visual SVG y el manejo de estado interactivo aún tienen vulnerabilidades. Tu tarea es **realizar un pulido general y resolver inconsistencias visuales o crashes del sistema**.
+El modo reproducible solo se activa al ejecutar `npm run dev:qa`; acepta `seed`, `mode` (`training|exam`), `type`, `difficulty`, `values`, `representation` y `manual`. Una misma URL/configuración permite restaurar la sesión al recargar; cambiar la semilla/config explícita inicia otra reproducción. La configuración no incorpora un solucionador y se ignora en builds de producción.
 
-Focos de atención donde suele romperse:
-1. **Inconsistencias Visuales en SVG:** 
-   - A veces, al simplificar agresivamente el grafo, los componentes pueden quedar cruzados de forma extraña, o los textos de valores se solapan con las líneas.
-   - En el Modo Avanzado, revisa que los cálculos de las curvas (`multiOffset`) para componentes en paralelo escalen bien en todos los casos extremos.
-2. **Crash Interactivo (Bugs Lógicos de UI):**
-   - El sistema de selección de componentes (`selectedIds`) a veces se confunde si ocurren re-renderizados bruscos.
-   - Revisa validaciones en el modo Grafo. Por ejemplo, si intentan combinar en serie dos componentes que comparten un nodo, pero ese nodo tiene una tercera conexión (grado > 2), el programa debería rechazarlo educadamente, no crashear ni permitirlo.
-3. **Escalabilidad en Pantallas Diferentes:**
-   - Hay que asegurar que el `viewBox` del SVG se adapte bien sin que los elementos se salgan de la pantalla en dispositivos muy chicos o resoluciones atípicas.
-4. **Manejo de Errores de Estado:**
-   - Asegúrate de que las transiciones de estado entre "Juego Terminado", "Modo Resistencias vs Capacitores", y "Modo Árbol vs Grafo" limpien correctamente todos los arrays para no arrastrar nodos o edges fantasma.
+## Reglas para futuras modificaciones
 
-¡Éxitos refinando este simulador! Conserva siempre la restricción de evitar Delta-Estrellas.
+- Mantener la resolución manual y no añadir Delta-Estrella.
+- No cambiar fórmulas ni contratos de los motores sin pruebas de resistencias y capacitores, incluidas capacidades infinitas, cero, cables y switches.
+- Revalidar diagramas antes y después de cada reducción; no permitir cruces ambiguos, etiquetas tapadas, ramas desprendidas o hitboxes insuficientes.
+- Probar entrada táctil real emulada y scroll en vertical/horizontal, además de teclado y clic.
+- Conservar cambios de trabajo y datos existentes. No hacer commit/push ni operaciones destructivas fuera de lo que el usuario solicite.

@@ -20,8 +20,8 @@ describe.each([
   ['C', 'series', [Infinity, 20], 20],
 ])('equivalent physics', (compType, mode, values, expected) => {
   it(`${compType} ${mode} ${values.join(',')}`, () => {
-    expectClose(calculateEquivalent(compType, values, mode), expected);
-    expectClose(calculateEquivalent(compType, values, mode), oracleCombine(compType, values, mode));
+    expect(expectClose(calculateEquivalent(compType, values, mode), expected)).toBe(true);
+    expect(expectClose(calculateEquivalent(compType, values, mode), oracleCombine(compType, values, mode))).toBe(true);
   });
 });
 
@@ -72,7 +72,20 @@ it('matches an independent recursive evaluator across generated seeds', () => {
     for (const difficulty of ['guided', 'practice', 'challenge']) {
       for (let seed = 0; seed < 40; seed += 1) {
         const exercise = generateBasicExercise(compType, { difficulty, seed: `unit:${seed}` });
-        expect(expectClose(evaluateTree(exercise.tree, compType), evaluateTree(exercise.tree, compType))).toBe(true);
+        const expected = evaluateTree(exercise.tree, compType);
+        let tree = exercise.tree;
+        const next = node => {
+          if (node.type === 'leaf') return null;
+          for (const child of node.children) { const found = next(child); if (found) return found; }
+          return { ids: node.children.map(child => child.id), rule: node.type };
+        };
+        while (tree.type !== 'leaf') {
+          const move = next(tree);
+          const reduced = combineNodes(tree, move.ids, move.rule, compType);
+          expect(reduced).not.toBe(tree);
+          tree = reduced;
+        }
+        expect(expectClose(tree.val, expected)).toBe(true);
       }
     }
   }

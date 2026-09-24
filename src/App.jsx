@@ -1,869 +1,112 @@
-import React, { useCallback, useEffect, useMemo, useReducer, useRef, useState } from 'react';
-import {
-  Activity,
-  ArrowRight,
-  BookOpen,
-  CheckCircle2,
-  ChevronRight,
-  Flame,
-  Grid3X3,
-  Layers,
-  Lightbulb,
-  Maximize2,
-  Minimize2,
-  RefreshCw,
-  Spline,
-  Trophy,
-  XCircle,
-  Zap,
-} from 'lucide-react';
-import {
-  DIFFICULTY_PRESETS,
-  formatValue,
-  generateBasicExercise,
-  getTreeStats,
-  combineNodes,
-  validateSelection,
-} from './lib/circuit';
-import {
-  combineGraphEdges,
-  deleteGraphEdge,
-  formatValue as gFormatValue,
-  generateGridCircuit,
-  validateGraphSelection,
-} from './lib/graphCircuit';
-import CircuitSVG from './components/CircuitSVG';
-import GridCircuitSVG from './components/GridCircuitSVG';
-import {
-  applyReward,
-  calculateReward,
-  INITIAL_INTERACTION_STATE,
-  interactionReducer,
-  readProgress,
-  writeProgress,
-} from './lib/gameState';
-import { getReductionAction } from './lib/keyboardShortcuts';
-import { getQaConfig } from './lib/qaConfig';
+import { useCallback, useEffect, useReducer, useRef, useState } from 'react';
+import TechnicalCircuit from './components/TechnicalCircuit.jsx';
+import PracticeSettings from './components/PracticeSettings.jsx';
+import PracticeHistory, { ReductionExplanation } from './components/PracticeHistory.jsx';
+import { isComplete, LEVELS } from './lib/exercise.js';
+import { getQaConfig } from './lib/qaConfig.js';
+import { loadSession, saveSession, sessionReducer } from './lib/session.js';
+import { getReductionAction } from './lib/keyboardShortcuts.js';
+import { formatExact } from './lib/values.js';
+import './App.css';
 
-const INITIAL_SEED = Date.now();
-const INITIAL_CONFIG = getQaConfig(INITIAL_SEED);
-
-function makeHistoryKey(mode, compType, difficulty, valueMode) {
-  return [mode, compType, difficulty, valueMode].join(':');
+function initialize() { return loadSession({ qa: getQaConfig() }); }
+function ArithmeticEntry({ pending, settings, notice, dispatch }) {
+  const [answer, setAnswer] = useState('');
+  return <form className="arithmetic-entry" onSubmit={event => { event.preventDefault(); dispatch({ type: 'answer', text: answer }); }} aria-label="Calcular equivalente">
+    <label htmlFor="equivalent-answer">Equivalente en {settings.representation === 'symbolic' ? settings.compType : settings.compType === 'R' ? settings.rUnit : settings.cUnit} ({pending.rule === 'series' ? 'serie' : 'paralelo'})</label>
+    <div className="answer-row"><input id="equivalent-answer" autoFocus value={answer} onChange={event => setAnswer(event.target.value)} placeholder={settings.representation === 'symbolic' ? `3/2${settings.compType}` : 'Ej.: 12,5 o 25/2'} autoComplete="off" spellCheck="false" aria-describedby="answer-help" /><button className="primary" type="submit">Confirmar valor</button><button type="button" onClick={() => dispatch({ type: 'clear' })}>Cancelar</button></div>
+    <p id="answer-help">Acepta fracciones, decimales y notación científica. {settings.representation === 'numeric' ? 'Redondeá a tres cifras significativas. Sin unidad, se usa la indicada.' : 'Ingresá un múltiplo exacto de la base.'} También podés escribir “cable” o “abierto”.</p>
+    {notice && <p className={notice.kind === 'error' ? 'error-text' : ''} role="status">{notice.message}</p>}
+  </form>;
 }
 
-function FormulaPanel({ compType }) {
-  const formulas = compType === 'R'
-    ? {
-        series: <>R<sub>eq</sub> = R<sub>1</sub> + R<sub>2</sub> + R<sub>3</sub> + …</>,
-        parallel: <>1/R<sub>eq</sub> = 1/R<sub>1</sub> + 1/R<sub>2</sub> + …</>,
-        name: 'Resistencias',
-      }
-    : {
-        series: <>1/C<sub>eq</sub> = 1/C<sub>1</sub> + 1/C<sub>2</sub> + …</>,
-        parallel: <>C<sub>eq</sub> = C<sub>1</sub> + C<sub>2</sub> + C<sub>3</sub> + …</>,
-        name: 'Capacitores',
-      };
-
-  return (
-    <aside className="formula-rail" aria-label="Fórmulas de referencia">
-      <div className="rail-heading">
-        <div className="rail-icon"><BookOpen size={16} /></div>
-        <div>
-          <span className="eyebrow">Cuaderno de laboratorio</span>
-          <h2>Reglas para {formulas.name.toLowerCase()}</h2>
-        </div>
-      </div>
-
-      <div className="formula-rule formula-rule--series">
-        <div className="formula-rule__label"><span className="formula-dot" /> Serie</div>
-        <div className="formula-expression">{formulas.series}</div>
-        <p>La misma corriente atraviesa cada componente.</p>
-      </div>
-
-      <div className="formula-rule formula-rule--parallel">
-        <div className="formula-rule__label"><span className="formula-dot" /> Paralelo</div>
-        <div className="formula-expression">{formulas.parallel}</div>
-        <p>Todos comparten los mismos dos nodos.</p>
-      </div>
-
-      <div className="formula-note">
-        <Lightbulb size={16} />
-        <span>
-          Primero identifica la conexión. Después elige la regla. El flujo animado es
-          una guía visual y solo está disponible para resistencias.
-        </span>
-      </div>
-    </aside>
-  );
-}
-
-const confettiPieces = Array.from({ length: 24 }, (_, index) => ({
-  left: ((index * 37) % 101) + '%',
-  top: ((index * 19) % 38) + '%',
-  delay: ((index % 7) * 0.08) + 's',
-  duration: (1.2 + (index % 5) * 0.16) + 's',
-  size: (6 + (index % 4) * 2) + 'px',
-  shape: index % 3 === 0 ? '50%' : '3px',
-  color: ['#37D6C0', '#FFB454', '#78A8FF', '#EF7770'][index % 4],
-}));
-
-function VictoryOverlay({ eqVal, compType, steps, reward, onNext }) {
-  const value = compType === 'R' ? formatValue(eqVal, compType) : gFormatValue(eqVal, compType);
-  const cleanMessage = reward?.clean
-    ? 'Resolución limpia: la racha sigue creciendo.'
-    : 'Circuito resuelto. En el próximo intento podés recuperar la racha.';
-
-  return (
-    <div className="victory-overlay" role="dialog" aria-modal="true" aria-labelledby="victory-title">
-      <div className="confetti-field" aria-hidden="true">
-        {confettiPieces.map((piece, index) => (
-          <span
-            key={index}
-            className="confetti-piece"
-            style={{
-              left: piece.left,
-              top: piece.top,
-              width: piece.size,
-              height: piece.size,
-              borderRadius: piece.shape,
-              backgroundColor: piece.color,
-              animationDelay: piece.delay,
-              animationDuration: piece.duration,
-            }}
-          />
-        ))}
-      </div>
-
-      <div className="victory-card">
-        <div className="victory-mark"><Trophy size={28} /></div>
-        <span className="eyebrow">Medición final</span>
-        <h2 id="victory-title">Circuito reducido</h2>
-        <p>
-          Encontraste el componente equivalente en {steps} paso{steps === 1 ? '' : 's'}.
-          {' '}{cleanMessage}
-        </p>
-        <div className="equivalent-readout">
-          <span>{compType === 'R' ? 'Resistencia' : 'Capacitancia'} equivalente</span>
-          <strong>{value}</strong>
-        </div>
-        <div className="victory-reward" aria-label="Recompensa del ejercicio">
-          <span>+{reward?.points || 0} puntos</span>
-          <span><Flame size={14} /> Racha {reward?.streak || 0}</span>
-        </div>
-        <button className="button button--primary button--large" onClick={onNext} autoFocus>
-          Medir otro circuito <ArrowRight size={18} />
-        </button>
-      </div>
-    </div>
-  );
-}
-
-function FeedbackBanner({ feedback, mode }) {
-  const isError = feedback?.type === 'error';
-  const isSuccess = feedback?.type === 'success';
-  const message = feedback?.text || (mode === 'basic'
-    ? 'Selecciona componentes que estén directamente conectados y elige una regla.'
-    : 'Toca o enfoca los componentes para seleccionarlos. Luego elige una regla.');
-
-  return (
-    <div
-      className={
-        'feedback-banner'
-        + (isError ? ' feedback-banner--error' : '')
-        + (isSuccess ? ' feedback-banner--success' : '')
-      }
-      key={feedback?.key || 'idle'}
-      role={isError ? 'alert' : 'status'}
-      aria-live="polite"
-    >
-      <span className="feedback-icon">
-        {isError ? <XCircle size={18} /> : isSuccess ? <CheckCircle2 size={18} /> : <ChevronRight size={18} />}
-      </span>
-      <span>{message}</span>
-    </div>
-  );
-}
-
-function Telemetry({ steps, mistakes, score, streak, bestStreak, isSolved, compact = false }) {
-  return (
-    <div className={'telemetry' + (compact ? ' telemetry--topbar' : '')} aria-label="Estado del ejercicio">
-      <div className="telemetry-cell">
-        <span className="telemetry-label">Paso</span>
-        <strong>{String(steps).padStart(2, '0')}</strong>
-      </div>
-      <div className="telemetry-cell">
-        <span className="telemetry-label">Fallos</span>
-        <strong>{String(mistakes).padStart(2, '0')}</strong>
-      </div>
-      <div className="telemetry-cell">
-        <span className="telemetry-label">Puntos</span>
-        <strong>{score}</strong>
-      </div>
-      <div className="telemetry-cell telemetry-cell--streak">
-        <span className="telemetry-label">Racha</span>
-        <strong>{streak}</strong>
-        <small>mejor {bestStreak}</small>
-      </div>
-      <div className="telemetry-state">
-        <span className={'status-lamp' + (isSolved ? ' is-solved' : '')} />
-        <span>{isSolved ? 'Circuito medido' : 'Fuente activa · 12 V'}</span>
-      </div>
-    </div>
-  );
-}
-
-function ExerciseActions({
-  selectedCount,
-  isSolved,
-  openSwitchSelected,
-  onCombine,
-  onDeleteSwitch,
-  onNewCircuit,
-  compact = false,
-}) {
-  return (
-    <div className={'action-group' + (compact ? ' action-group--topbar' : '')} aria-label="Acciones de reducción">
-      <button
-        className="button button--series"
-        disabled={selectedCount < 2 || isSolved}
-        onClick={() => onCombine('series')}
-      >
-        <Spline size={17} /> Serie <kbd className="action-shortcut">Q</kbd>
-      </button>
-      <button
-        className="button button--parallel"
-        disabled={selectedCount < 2 || isSolved}
-        onClick={() => onCombine('parallel')}
-      >
-        <Layers size={17} /> Paralelo <kbd className="action-shortcut">E</kbd>
-      </button>
-      {openSwitchSelected && (
-        <button className="button button--danger" onClick={onDeleteSwitch}>
-          <XCircle size={17} /> Eliminar abierto
-        </button>
-      )}
-      <button className="button button--quiet" onClick={onNewCircuit}>
-        <RefreshCw size={16} /> Nuevo circuito
-      </button>
-    </div>
-  );
-}
-
-function App() {
-  const feedbackKeyRef = useRef(0);
-  const actionLockRef = useRef(false);
-  const historyRef = useRef({});
-  const historyInitializedRef = useRef(false);
-  const circuitPanelRef = useRef(null);
-
-  const [mode, setMode] = useState(INITIAL_CONFIG.mode);
-  const [compType, setCompType] = useState(INITIAL_CONFIG.compType);
-  const [difficulty, setDifficulty] = useState(INITIAL_CONFIG.difficulty);
-  const [isWorkspaceFullscreen, setIsWorkspaceFullscreen] = useState(false);
-  const [showFormulas, setShowFormulas] = useState(false);
-  const [showFlow, setShowFlow] = useState(true);
-  const [valueMode, setValueMode] = useState(INITIAL_CONFIG.valueMode);
-  const [basicExercise, setBasicExercise] = useState(() => (
-    generateBasicExercise(INITIAL_CONFIG.compType, {
-      difficulty: INITIAL_CONFIG.difficulty,
-      seed: INITIAL_CONFIG.seed,
-      valueMode: INITIAL_CONFIG.valueMode,
-    })
-  ));
-  const [graphExercise, setGraphExercise] = useState(() => (
-    generateGridCircuit(INITIAL_CONFIG.compType, INITIAL_CONFIG.valueMode, {
-      difficulty: INITIAL_CONFIG.difficulty,
-      seed: INITIAL_CONFIG.seed,
-    })
-  ));
-  const [interaction, dispatchInteraction] = useReducer(interactionReducer, INITIAL_INTERACTION_STATE);
-  const { selectedIds, feedback, steps, mistakes, exerciseHadMistake, reward } = interaction;
-  const [currentSeed, setCurrentSeed] = useState(INITIAL_CONFIG.seed);
-  const [progress, setProgress] = useState(readProgress);
-
-  const tree = basicExercise?.tree;
-  const graphNodes = graphExercise.nodes;
-  const graphEdges = graphExercise.edges;
-  const isSolved = feedback?.type === 'victory';
-  const eqVal = feedback?.val ?? 0;
-  const componentName = compType === 'R' ? 'Resistencias' : 'Capacitores';
-  const flowActive = showFlow && compType === 'R';
-
+export default function App() {
+  const [loaded] = useState(initialize);
+  const [state, rawDispatch] = useReducer(sessionReducer, loaded.state);
+  const [storageWarning, setStorageWarning] = useState(loaded.warning);
+  const [fullscreen, setFullscreen] = useState(false), [nativeFullscreen, setNativeFullscreen] = useState(false);
+  const [showHistory, setShowHistory] = useState(false), [now, setNow] = useState(Date.now);
+  const restoreCircuitFocus = useRef(false);
+  const desk = useRef(null), fullscreenButton = useRef(null);
+  const dispatch = useCallback(action => rawDispatch({ ...action, now: Date.now() }), []);
+  const { settings, current, progress, exam } = state;
+  const { exercise } = current;
+  const complete = isComplete(exercise), activeExam = exam?.status === 'active';
+  const locked = current.submitted || (settings.mode === 'exam' && !activeExam);
+  const mistakes = current.attempts.filter(item => item.kind === 'error').length;
+  const steps = current.attempts.filter(item => item.kind === 'reduction').length;
+  const lastStep = current.attempts.findLast(item => item.kind === 'reduction');
   useEffect(() => {
-    writeProgress(progress);
-  }, [progress]);
-
+    const saved = () => setStorageWarning('El navegador no permite guardar la sesión. Podés seguir practicando, pero se perderá al cerrar esta página.');
+    window.addEventListener('circuit-storage-error', saved);
+    return () => window.removeEventListener('circuit-storage-error', saved);
+  }, []);
+  useEffect(() => { if (!saveSession(state)) window.dispatchEvent(new Event('circuit-storage-error')); }, [state]);
   useEffect(() => {
-    const handleFullscreenChange = () => {
-      setIsWorkspaceFullscreen(document.fullscreenElement === circuitPanelRef.current);
-    };
-
-    document.addEventListener('fullscreenchange', handleFullscreenChange);
-    return () => document.removeEventListener('fullscreenchange', handleFullscreenChange);
-  }, []);
-
+    if (!activeExam || !exam.deadline) return;
+    const tick = () => { const timestamp = Date.now(); setNow(timestamp); dispatch({ type: 'tick', now: timestamp }); };
+    const timer = window.setInterval(tick, 1000);
+    document.addEventListener('visibilitychange', tick);
+    return () => { clearInterval(timer); document.removeEventListener('visibilitychange', tick); };
+  }, [activeExam, exam?.deadline, dispatch]);
   useEffect(() => {
-    if (!isWorkspaceFullscreen || document.fullscreenElement) return undefined;
-    const exitCssFullscreen = (event) => {
-      if (event.key === 'Escape') setIsWorkspaceFullscreen(false);
-    };
-    window.addEventListener('keydown', exitCssFullscreen);
-    return () => window.removeEventListener('keydown', exitCssFullscreen);
-  }, [isWorkspaceFullscreen]);
-
-  const toggleWorkspaceFullscreen = useCallback(async () => {
-    if (document.fullscreenElement === circuitPanelRef.current) {
-      await document.exitFullscreen();
-      return;
-    }
-
-    if (isWorkspaceFullscreen && !document.fullscreenElement) {
-      setIsWorkspaceFullscreen(false);
-      return;
-    }
-
-    const panel = circuitPanelRef.current;
-    if (!panel) return;
-
-    if (!panel.requestFullscreen) {
-      setIsWorkspaceFullscreen(true);
-      return;
-    }
-
-    try {
-      await panel.requestFullscreen({ navigationUI: 'hide' });
-    } catch {
-      // Some embedded browsers expose the API but reject it. The CSS fallback
-      // still gives the user a usable full-workbench mode.
-      setIsWorkspaceFullscreen(true);
-    }
-  }, [isWorkspaceFullscreen]);
-
-  useEffect(() => {
-    if (historyInitializedRef.current) return;
-
-    historyRef.current[makeHistoryKey('basic', compType, difficulty, valueMode)] = [basicExercise.signature];
-    historyRef.current[makeHistoryKey('advanced', compType, difficulty, valueMode)] = [graphExercise.signature];
-    historyInitializedRef.current = true;
-  }, [basicExercise.signature, compType, difficulty, graphExercise.signature, valueMode]);
-
-  const publishFeedback = useCallback((type, text, val) => {
-    feedbackKeyRef.current += 1;
-    dispatchInteraction({
-      type: 'feedback',
-      feedback: { type, text, val, key: feedbackKeyRef.current },
-    });
-  }, []);
-
-  const rememberSignature = useCallback((targetMode, targetType, targetDifficulty, targetValueMode, signature) => {
-    const key = makeHistoryKey(targetMode, targetType, targetDifficulty, targetValueMode);
-    const recent = historyRef.current[key] || [];
-    historyRef.current[key] = recent.concat(signature).slice(-18);
-  }, []);
-
-  const createExercise = useCallback((
-    targetMode = mode,
-    targetType = compType,
-    targetDifficulty = difficulty,
-    targetValueMode = valueMode,
-    options = {},
-  ) => {
-    const nextSeed = currentSeed + 1;
-    const historyKey = makeHistoryKey(targetMode, targetType, targetDifficulty, targetValueMode);
-    const recentSignatures = historyRef.current[historyKey] || [];
-    if (targetMode === 'basic') {
-      const nextExercise = generateBasicExercise(targetType, {
-        difficulty: targetDifficulty,
-        seed: nextSeed,
-        valueMode: targetValueMode,
-        recentSignatures,
-      });
-      setBasicExercise(nextExercise);
-      rememberSignature(
-        targetMode,
-        targetType,
-        targetDifficulty,
-        targetValueMode,
-        nextExercise.signature,
-      );
-    } else {
-      const nextExercise = generateGridCircuit(targetType, targetValueMode, {
-        difficulty: targetDifficulty,
-        seed: nextSeed,
-        recentSignatures,
-      });
-      setGraphExercise(nextExercise);
-      rememberSignature(
-        targetMode,
-        targetType,
-        targetDifficulty,
-        targetValueMode,
-        nextExercise.signature,
-      );
-    }
-
-    setCurrentSeed(nextSeed);
-    dispatchInteraction({ type: 'reset' });
-    setShowFlow((current) => targetType === 'R' ? current : false);
-
-    if (options.breakStreak !== false) {
-      setProgress((current) => ({ ...current, streak: 0 }));
-    }
-  }, [
-    compType,
-    difficulty,
-    mode,
-    currentSeed,
-    rememberSignature,
-    valueMode,
-  ]);
-
-  const changeMode = useCallback((nextMode) => {
-    setMode(nextMode);
-    createExercise(nextMode, compType, difficulty, valueMode);
-  }, [compType, createExercise, difficulty, valueMode]);
-
-  const changeComponentType = useCallback((nextType) => {
-    setCompType(nextType);
-    createExercise(mode, nextType, difficulty, valueMode);
-  }, [createExercise, difficulty, mode, valueMode]);
-
-  const changeDifficulty = useCallback((nextDifficulty) => {
-    setDifficulty(nextDifficulty);
-    createExercise(mode, compType, nextDifficulty, valueMode);
-  }, [compType, createExercise, mode, valueMode]);
-
-  const changeValueMode = useCallback((nextValueMode) => {
-    setValueMode(nextValueMode);
-    createExercise(mode, compType, difficulty, nextValueMode);
-  }, [compType, createExercise, difficulty, mode]);
-
-  const handleSelect = useCallback((id) => {
-    if (isSolved) return;
-    dispatchInteraction({ type: 'toggle-selection', id });
-  }, [isSolved]);
-
-  const setError = useCallback((message) => {
-    feedbackKeyRef.current += 1;
-    dispatchInteraction({
-      type: 'error',
-      feedback: { type: 'error', text: message, key: feedbackKeyRef.current },
-    });
-    setProgress((current) => ({ ...current, streak: 0 }));
-  }, []);
-
-  const completeExercise = useCallback((value) => {
-    const nextReward = calculateReward(progress, difficulty, exerciseHadMistake);
-    setProgress((current) => applyReward(current, nextReward));
-    dispatchInteraction({ type: 'complete', reward: nextReward });
-    publishFeedback('victory', 'Medición correcta. El equivalente quedó conectado a la batería.', value);
-  }, [difficulty, exerciseHadMistake, progress, publishFeedback]);
-
-  const handleCombine = useCallback((action) => {
-    if (isSolved || actionLockRef.current) return;
-    actionLockRef.current = true;
-    queueMicrotask(() => { actionLockRef.current = false; });
-
-    if (mode === 'basic') {
-      const result = validateSelection(tree, selectedIds, action);
-      if (!result.valid) {
-        setError(result.message);
+    const onKey = event => {
+      if (event.defaultPrevented || event.repeat || event.altKey || event.target.closest?.('input, textarea, select, [contenteditable="true"]')) return;
+      if (event.key === 'Escape') {
+        event.preventDefault();
+        if (document.fullscreenElement) document.exitFullscreen().catch(() => setFullscreen(false));
+        setFullscreen(false);
+        dispatch({ type: 'clear' });
         return;
       }
-
-      const nextTree = combineNodes(tree, selectedIds, action, compType);
-      setBasicExercise((current) => ({ ...current, tree: nextTree }));
-      dispatchInteraction({ type: 'step' });
-
-      if (nextTree.type === 'leaf') {
-        completeExercise(nextTree.val);
-      } else {
-        publishFeedback(
-          'success',
-          'Combinación correcta: conexión en ' + (action === 'series' ? 'serie.' : 'paralelo.'),
-        );
+      if (event.ctrlKey || event.metaKey) {
+        const key = event.key.toLowerCase();
+        if (key === 'z' || key === 'y') { event.preventDefault(); restoreCircuitFocus.current = true; dispatch({ type: key === 'y' || event.shiftKey ? 'redo' : 'undo' }); }
+        return;
       }
-      return;
-    }
-
-    const selectedEdges = graphEdges.filter((edge) => selectedIds.includes(edge.id));
-    if (selectedEdges.some((edge) => edge.compType === 'S' && edge.switchState === 'open')) {
-      setError('Un interruptor abierto equivale a una rama desconectada. Seleccionalo solo y pulsa "Eliminar abierto".');
-      return;
-    }
-
-    const result = validateGraphSelection(graphNodes, graphEdges, selectedIds, action);
-    if (!result.valid) {
-      setError(result.message);
-      return;
-    }
-
-    const nextGraph = combineGraphEdges(graphNodes, graphEdges, selectedIds, action, compType);
-    setGraphExercise((current) => ({
-      ...current,
-      nodes: nextGraph.nodes,
-      edges: nextGraph.edges,
-    }));
-    dispatchInteraction({ type: 'step' });
-
-    if (nextGraph.edges.length === 1) {
-      completeExercise(nextGraph.edges[0].val);
-    } else {
-      publishFeedback(
-        'success',
-        'Combinación correcta: conexión en ' + (action === 'series' ? 'serie.' : 'paralelo.'),
-      );
-    }
-  }, [
-    compType,
-    completeExercise,
-    graphEdges,
-    graphNodes,
-    isSolved,
-    mode,
-    publishFeedback,
-    selectedIds,
-    setError,
-    tree,
-  ]);
-
-  useEffect(() => {
-    const handleReductionShortcut = (event) => {
-      if (event.defaultPrevented || event.repeat || event.ctrlKey || event.metaKey || event.altKey) return;
-
-      const target = event.target;
-      const isEditing = target instanceof HTMLElement && (
-        target.isContentEditable
-        || ['INPUT', 'TEXTAREA', 'SELECT'].includes(target.tagName)
-      );
-      if (isEditing || selectedIds.length < 2 || isSolved) return;
-
-      const action = getReductionAction(event);
-      if (!action) return;
-
-      event.preventDefault();
-      handleCombine(action);
+      const rule = getReductionAction(event);
+      if (rule && !event.shiftKey) { event.preventDefault(); restoreCircuitFocus.current = true; dispatch({ type: 'reduce', rule }); }
     };
-
-    window.addEventListener('keydown', handleReductionShortcut);
-    return () => window.removeEventListener('keydown', handleReductionShortcut);
-  }, [handleCombine, isSolved, selectedIds.length]);
-
-  const handleDeleteSwitch = useCallback(() => {
-    if (mode !== 'advanced' || selectedIds.length !== 1) {
-      setError('Selecciona un único interruptor abierto para eliminarlo.');
-      return;
-    }
-
-    const selectedSwitch = graphEdges.find((edge) => edge.id === selectedIds[0]);
-    if (!selectedSwitch || selectedSwitch.compType !== 'S' || selectedSwitch.switchState !== 'open') {
-      setError('Solo se pueden eliminar interruptores en estado abierto.');
-      return;
-    }
-
-    const nextGraph = deleteGraphEdge(graphNodes, graphEdges, selectedIds[0]);
-    setGraphExercise((current) => ({
-      ...current,
-      nodes: nextGraph.nodes,
-      edges: nextGraph.edges,
-    }));
-    dispatchInteraction({ type: 'step' });
-
-    if (nextGraph.edges.length === 1) {
-      completeExercise(nextGraph.edges[0].val);
-    } else {
-      publishFeedback(
-        'success',
-        'Interruptor abierto eliminado. Las ramas muertas fueron podadas.',
-      );
-    }
-  }, [
-    completeExercise,
-    graphEdges,
-    graphNodes,
-    mode,
-    publishFeedback,
-    selectedIds,
-    setError,
-  ]);
-
-  const openSwitchSelected = useMemo(() => (
-    mode === 'advanced'
-      && selectedIds.length === 1
-      && graphEdges.some((edge) => (
-        edge.id === selectedIds[0]
-        && edge.compType === 'S'
-        && edge.switchState === 'open'
-      ))
-  ), [graphEdges, mode, selectedIds]);
-
-  const activeCount = mode === 'basic'
-    ? (tree ? getTreeStats(tree).leaves : 0)
-    : graphEdges.length;
-  const panelReadout = mode === 'basic'
-    ? activeCount + ' componentes activos · semilla ' + currentSeed
-    : graphEdges.length + ' elementos activos · semilla ' + currentSeed;
-  const difficultyLabel = DIFFICULTY_PRESETS[difficulty]?.label || 'Guiado';
-
-  if (mode === 'basic' && !tree) return null;
-
-  return (
-    <div
-      className={'app-shell' + (isWorkspaceFullscreen ? ' is-workbench-fullscreen' : '')}
-      data-qa-mode={INITIAL_CONFIG.enabled ? 'true' : undefined}
-    >
-      <header className="topbar">
-        <div className="topbar-main">
-          <div className="brand-lockup">
-            <div className="brand-mark" aria-hidden="true"><Zap size={22} /></div>
-            <div>
-              <p className="brand-kicker">Laboratorio 01</p>
-              <p className="brand-name">Circuitos en equilibrio</p>
-            </div>
-          </div>
-
-          <div className="topbar-quick">
-            <Telemetry
-              steps={steps}
-              mistakes={mistakes}
-              score={progress.score}
-              streak={progress.streak}
-              bestStreak={progress.bestStreak}
-              isSolved={isSolved}
-              compact
-            />
-            <ExerciseActions
-              selectedCount={selectedIds.length}
-              isSolved={isSolved}
-              openSwitchSelected={openSwitchSelected}
-              onCombine={handleCombine}
-              onDeleteSwitch={handleDeleteSwitch}
-              onNewCircuit={() => createExercise()}
-              compact
-            />
-          </div>
-        </div>
-
-        <div className="topbar-controls">
-          <div className="segmented-control" role="group" aria-label="Modo de práctica">
-            <button
-              className={mode === 'basic' ? 'is-active' : ''}
-              aria-pressed={mode === 'basic'}
-              onClick={() => changeMode('basic')}
-            >
-              Básico
-            </button>
-            <button
-              className={mode === 'advanced' ? 'is-active' : ''}
-              aria-pressed={mode === 'advanced'}
-              onClick={() => changeMode('advanced')}
-            >
-              <Grid3X3 size={14} /> Avanzado
-            </button>
-          </div>
-
-          <div className="segmented-control segmented-control--component" role="group" aria-label="Tipo de componente">
-            <button
-              className={compType === 'R' ? 'is-active' : ''}
-              aria-pressed={compType === 'R'}
-              onClick={() => changeComponentType('R')}
-            >
-              R
-            </button>
-            <button
-              className={compType === 'C' ? 'is-active' : ''}
-              aria-pressed={compType === 'C'}
-              onClick={() => changeComponentType('C')}
-            >
-              C
-            </button>
-          </div>
-
-          <div className="segmented-control segmented-control--difficulty" role="group" aria-label="Dificultad">
-            {Object.entries(DIFFICULTY_PRESETS).map(([key, preset]) => (
-              <button
-                key={key}
-                className={difficulty === key ? 'is-active' : ''}
-                aria-pressed={difficulty === key}
-                onClick={() => changeDifficulty(key)}
-              >
-                {preset.label}
-              </button>
-            ))}
-          </div>
-
-          {mode === 'advanced' && (
-            <div className="segmented-control segmented-control--values" role="group" aria-label="Distribución de valores">
-              <button
-                className={valueMode === 'varied' ? 'is-active' : ''}
-                aria-pressed={valueMode === 'varied'}
-                onClick={() => changeValueMode('varied')}
-              >
-                Variados
-              </button>
-              <button
-                className={valueMode === 'equal' ? 'is-active' : ''}
-                aria-pressed={valueMode === 'equal'}
-                onClick={() => changeValueMode('equal')}
-              >
-                Iguales
-              </button>
-            </div>
-          )}
-
-          <button
-            className={'topbar-tool' + (showFormulas ? ' is-active' : '')}
-            aria-pressed={showFormulas}
-            onClick={() => setShowFormulas((open) => !open)}
-          >
-            <BookOpen size={16} /> Fórmulas
-          </button>
-          <button
-            className={'topbar-tool' + (flowActive ? ' is-active' : '')}
-            aria-pressed={flowActive}
-            disabled={compType !== 'R'}
-            title={compType === 'R' ? 'Mostrar flujo ilustrativo' : 'Disponible para resistencias'}
-            onClick={() => setShowFlow((current) => !current)}
-          >
-            <Activity size={16} /> Flujo
-          </button>
-        </div>
-      </header>
-
-      <main className="workspace">
-        <section className="exercise-heading">
-          <div className="heading-copy">
-            <span className="eyebrow"><span className="eyebrow-pip" /> Práctica adaptativa</span>
-            <h1>Simplifica el circuito sin perderte en la malla.</h1>
-            <p>
-              Lee la topología, selecciona los componentes vecinos y decide si forman
-              una conexión en serie o en paralelo. El circuito se ajusta al espacio
-              disponible para que puedas leerlo completo también en teléfono.
-            </p>
-          </div>
-        </section>
-
-        <section className="control-strip" aria-label="Acciones del ejercicio">
-          <div className="instruction-copy">
-            <span className="instruction-label">
-              {mode === 'basic' ? 'Modo básico' : 'Modo avanzado'} · {difficultyLabel}
-            </span>
-            <span>
-              {isSolved
-                ? 'Resultado registrado.'
-                : 'Selecciona dos o más elementos para habilitar una regla.'}
-            </span>
-          </div>
-
-          <span className="control-strip-note">Controles de reducción fijados en la cabecera.</span>
-        </section>
-
-        <FeedbackBanner feedback={feedback} mode={mode} />
-
-        <section className="workbench-grid">
-          <section
-            ref={circuitPanelRef}
-            className={'circuit-panel' + (isWorkspaceFullscreen ? ' is-fullscreen-workbench' : '')}
-            aria-label={'Circuito de ' + componentName.toLowerCase()}
-          >
-            <div className="panel-heading">
-              <div>
-                <span className="eyebrow">Mesa de trabajo</span>
-                <h2>{mode === 'basic' ? 'Reducción por bloques' : 'Lectura topológica'}</h2>
-              </div>
-              <div className="panel-heading__tools">
-                <div className="panel-readout" title={panelReadout}>
-                  <span className="readout-dot" />
-                  {panelReadout}
-                </div>
-                <button
-                  type="button"
-                  className="panel-fullscreen-button"
-                  aria-pressed={isWorkspaceFullscreen}
-                  aria-label={isWorkspaceFullscreen ? 'Salir de pantalla completa' : 'Abrir mesa de trabajo en pantalla completa'}
-                  title={isWorkspaceFullscreen ? 'Salir de pantalla completa' : 'Pantalla completa'}
-                  onClick={toggleWorkspaceFullscreen}
-                >
-                  {isWorkspaceFullscreen ? <Minimize2 size={17} /> : <Maximize2 size={17} />}
-                  <span>{isWorkspaceFullscreen ? 'Salir' : 'Pantalla completa'}</span>
-                </button>
-              </div>
-            </div>
-
-            {isWorkspaceFullscreen && (
-              <div className="fullscreen-toolbar" aria-label="Controles de la mesa de trabajo">
-                <Telemetry
-                  steps={steps}
-                  mistakes={mistakes}
-                  score={progress.score}
-                  streak={progress.streak}
-                  bestStreak={progress.bestStreak}
-                  isSolved={isSolved}
-                />
-                <ExerciseActions
-                  selectedCount={selectedIds.length}
-                  isSolved={isSolved}
-                  openSwitchSelected={openSwitchSelected}
-                  onCombine={handleCombine}
-                  onDeleteSwitch={handleDeleteSwitch}
-                  onNewCircuit={() => createExercise()}
-                />
-              </div>
-            )}
-
-            <div className="circuit-stage">
-              {mode === 'basic' && tree && (
-                <CircuitSVG
-                  tree={tree}
-                  selectedIds={selectedIds}
-                  onSelect={handleSelect}
-                  showFlow={flowActive}
-                />
-              )}
-              {mode === 'advanced' && (
-                <GridCircuitSVG
-                  nodes={graphNodes}
-                  edges={graphEdges}
-                  selectedIds={selectedIds}
-                  onSelect={handleSelect}
-                  showFlow={flowActive}
-                  sourceRoute={graphExercise.sourceRoute}
-                  sourceSymbol={graphExercise.sourceSymbol}
-                  equivalentRoute={graphExercise.equivalentRoute}
-                  layout={graphExercise.layout}
-                />
-              )}
-              {isSolved && (
-                <VictoryOverlay
-                  eqVal={eqVal}
-                  compType={compType}
-                  steps={steps}
-                  reward={reward}
-                  onNext={() => createExercise(mode, compType, difficulty, valueMode, { breakStreak: false })}
-                />
-              )}
-            </div>
-
-            <div className="circuit-legend" aria-label="Leyenda de símbolos">
-              <span><i className="legend-symbol legend-symbol--resistor" /> Resistencia</span>
-              <span><i className="legend-symbol legend-symbol--capacitor" /> Capacitor</span>
-              <span><i className="legend-symbol legend-symbol--switch" /> Interruptor</span>
-              <span><i className="legend-symbol legend-symbol--wire" /> Cable</span>
-            </div>
-          </section>
-
-          {showFormulas && <FormulaPanel compType={compType} />}
-        </section>
-      </main>
-
-      <footer className="app-footer">
-        <span>Electricidad y magnetismo</span>
-        <span className="footer-separator" />
-        <span>{progress.completed} circuitos completados · Piensa la conexión antes de combinar.</span>
-      </footer>
-    </div>
-  );
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [dispatch]);
+  useEffect(() => {
+    if (!restoreCircuitFocus.current) return;
+    restoreCircuitFocus.current = false;
+    desk.current?.querySelector('[data-component-id]')?.focus();
+  }, [exercise.revision]);
+  useEffect(() => {
+    const change = () => { const enabled = document.fullscreenElement === desk.current; setNativeFullscreen(enabled); setFullscreen(enabled); if (!enabled) fullscreenButton.current?.focus(); };
+    document.addEventListener('fullscreenchange', change);
+    return () => document.removeEventListener('fullscreenchange', change);
+  }, []);
+  useEffect(() => {
+    if (!fullscreen) return;
+    const previous = document.body.style.overflow; document.body.style.overflow = 'hidden';
+    return () => { document.body.style.overflow = previous; };
+  }, [fullscreen]);
+  async function toggleFullscreen() {
+    if (fullscreen) { if (document.fullscreenElement) await document.exitFullscreen().catch(() => {}); setFullscreen(false); fullscreenButton.current?.focus(); return; }
+    setFullscreen(true);
+    try { await desk.current.requestFullscreen(); } catch { setNativeFullscreen(false); }
+  }
+  const select = useCallback(id => dispatch({ type: 'select', id }), [dispatch]);
+  const clear = useCallback(() => dispatch({ type: 'clear' }), [dispatch]);
+  const remaining = exam?.deadline ? Math.max(0, Math.ceil((exam.deadline - now) / 1000)) : null;
+  return <main className="practice-app">
+    <header className="app-header"><div className="app-identity"><svg viewBox="0 0 44 28" aria-hidden="true"><path d="M 1 14 H 10 L 14 5 L 20 23 L 26 5 L 32 23 L 36 14 H 43" /></svg><div><h1>Circuit Practice</h1><p>Práctica de parciales</p></div></div><button aria-expanded={showHistory} onClick={() => setShowHistory(value => !value)}>{showHistory ? 'Cerrar historial' : 'Historial'}</button></header>
+    <PracticeSettings settings={settings} activeExam={activeExam} onChange={next => dispatch({ type: 'settings', settings: next })} />
+    {storageWarning && <p role="status" className="storage-warning">{storageWarning}</p>}
+    {settings.mode === 'exam' && !activeExam && <section className="exam-summary" aria-label="Simulacro de parcial"><div><h2>{exam?.status === 'finished' ? exam.expired ? 'Parcial cerrado' : 'Parcial entregado' : 'Prepará tu parcial'}</h2><p>{exam?.status === 'finished' ? `${exam.results.filter(item => item.status === 'complete').length} de ${exam.count} ejercicios completos. Revisá los pasos y errores al pie de la página.` : `${settings.examCount} ejercicios · ${settings.examMinutes ? settings.examMinutes + ' minutos' : 'Sin límite de tiempo'} · Sin pistas ni fórmulas durante la sesión.`}</p></div><button className="primary" onClick={() => dispatch({ type: 'start-exam' })}>{exam?.status === 'finished' ? 'Comenzar otro parcial' : 'Comenzar parcial'}</button></section>}
+    <section ref={desk} className={`workbench ${fullscreen ? 'desk-fullscreen' : ''} ${fullscreen && !nativeFullscreen ? 'css-fullscreen' : ''}`} aria-label="Mesa de trabajo">
+      <header className="desk-header"><div className="exercise-heading"><h2>{activeExam ? `Parcial · ${exam.results.length + 1}/${exam.count}` : 'Entrenamiento'} <span>/ {LEVELS[settings.difficulty].label}</span></h2><p>{settings.compType === 'R' ? 'Resistencias' : 'Capacitores'} · {exercise.family}</p></div><div className="telemetry" aria-label="Progreso"><span>Pasos <b data-testid="steps">{steps}</b></span><span>Fallos <b>{mistakes}</b></span><span>Puntos <b data-testid="score">{progress.score}</b></span><span>Racha <b>{progress.streak}</b></span><span className="source-state">Fuente <b>12 V</b></span>{remaining !== null && activeExam && <span aria-label="Tiempo restante" className="exam-clock">{Math.floor(remaining / 60)}:{String(remaining % 60).padStart(2, '0')}</span>}</div><button ref={fullscreenButton} onClick={toggleFullscreen} aria-label={fullscreen ? 'Salir de pantalla completa' : 'Pantalla completa'}>{fullscreen ? 'Salir ⤡' : 'Ampliar ⤢'}</button></header>
+      <div className="action-bar" role="group" aria-label="Acciones del circuito"><div className="reduction-actions"><button className="primary" onClick={() => dispatch({ type: 'reduce', rule: 'series' })} disabled={locked || complete || current.selected.length < 2 || !!current.pending}>Serie <kbd>Q</kbd></button><button className="primary" onClick={() => dispatch({ type: 'reduce', rule: 'parallel' })} disabled={locked || complete || current.selected.length < 2 || !!current.pending}>Paralelo <kbd>E</kbd></button>{current.selected.some(id => exercise.edges.find(edge => edge.id === id)?.switchState === 'open') && <button onClick={() => dispatch({ type: 'reduce', rule: 'delete' })} disabled={locked}>Eliminar abierto</button>}<span className="selection-count">{current.selected.length} seleccionados</span></div><div className="secondary-actions"><button onClick={() => dispatch({ type: 'undo' })} disabled={locked || !current.past.length} title="Ctrl/Cmd + Z">Deshacer</button><button onClick={() => dispatch({ type: 'redo' })} disabled={locked || !current.future.length} title="Ctrl/Cmd + Mayús + Z">Rehacer</button>{activeExam ? <button onClick={() => { if (window.confirm('¿Cerrar el parcial? Los ejercicios sin entregar quedarán incompletos.')) dispatch({ type: 'finish-exam' }); }}>Finalizar parcial</button> : <button onClick={() => dispatch({ type: 'new' })}>Nuevo circuito</button>}</div></div>
+      <div className="desk-content"><TechnicalCircuit key={exercise.id} exercise={exercise} settings={settings} selected={current.selected} onSelect={select} onClear={clear} disabled={locked || complete || !!current.pending} /><aside className="component-panel" aria-label="Selección de componentes"><div className="panel-heading"><h3>Componentes <span>{exercise.edges.length}</span></h3><button onClick={clear} disabled={!current.selected.length}>Limpiar</button></div><div className="component-list">{exercise.edges.map(edge => <button key={edge.id} className={`component-option ${edge.equivalent ? 'equivalent' : ''}`} data-testid={`component-${edge.id}`} aria-pressed={current.selected.includes(edge.id)} disabled={locked || complete || !!current.pending} onClick={() => select(edge.id)}><span className="component-check" aria-hidden="true">{current.selected.includes(edge.id) ? '✓' : ''}</span><strong>{edge.label}</strong><span className="numeric">{formatExact(edge.value, settings)}</span></button>)}</div><p className="panel-note">Serie y paralelo se reconocen por los nodos, no por la orientación del símbolo.</p>{settings.mode === 'training' && <button className="hint-button" onClick={() => dispatch({ type: 'hint' })}>Pista conceptual</button>}</aside></div>
+      {current.pending ? <ArithmeticEntry key={current.pending.revision} pending={current.pending} settings={settings} notice={current.notice} dispatch={dispatch} /> : <div className={`feedback-strip ${current.notice?.kind || ''}`} role="status">{current.notice?.message || 'Elegí dos o más componentes conectados y aplicá una regla.'}</div>}
+      {complete && <section className="result-strip" aria-label="Circuito reducido"><div><strong>Equivalente: {formatExact(exercise.edges[0].value, settings)}</strong><p>{current.submitted ? 'Resultado registrado.' : 'Podés deshacer para revisar. Los puntos se suman al entregar.'}</p></div>{!current.submitted && <button className="primary" onClick={() => dispatch({ type: 'submit' })}>Entregar y continuar</button>}</section>}
+      {settings.mode === 'training' && lastStep && !current.pending && <details className="step-explanation"><summary>Última reducción: fórmula y sustitución</summary><ReductionExplanation step={lastStep} settings={settings} /></details>}
+    </section>
+    <footer className="practice-footer"><span>Reducción manual · Solo serie y paralelo</span><span>Semilla {exercise.seed} · Mejor racha {progress.bestStreak} · {progress.completed} entregados</span></footer>
+    {(showHistory && !activeExam || exam?.status === 'finished') && <PracticeHistory history={state.history} exam={exam} />}
+  </main>;
 }
-
-export default App;

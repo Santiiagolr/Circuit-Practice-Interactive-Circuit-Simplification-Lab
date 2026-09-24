@@ -1,3 +1,4 @@
+import { validateTopology } from './topology.js';
 import {
   calculateEquivalent,
   createSeededRandom,
@@ -170,6 +171,8 @@ export function isSolvable(nodesIn, edgesIn) {
 }
 
 export function validateGraphSelection(nodes, edges, selectedIds, action) {
+  const topology = validateTopology(nodes, edges, selectedIds, action);
+  if (!topology.valid) return topology;
   if (selectedIds.length < 2) {
     return { valid: false, message: 'Seleccioná al menos 2 componentes.' };
   }
@@ -304,6 +307,7 @@ function getRouteStyle(route) {
 }
 
 export function combineGraphEdges(nodes, edges, selectedIds, action, compType) {
+  if (!validateTopology(nodes, edges, selectedIds, action).valid) return { nodes, edges };
   const newNodes = nodes.map((node) => ({ ...node }));
   let newEdges = edges.map((edge) => ({
     ...edge,

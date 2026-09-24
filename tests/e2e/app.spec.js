@@ -1,90 +1,133 @@
 import { expect, test } from '@playwright/test';
-import { captureRuntimeErrors, expectNoHorizontalDocumentOverflow, solveVisibleCircuit } from './helpers';
+import { captureRuntimeErrors, expectNoHorizontalDocumentOverflow, findManualMove, performManualMove, selectComponents, solveVisibleCircuit } from './helpers';
 
-test('loads reproducibly without overflow and supports zoom/fullscreen controls', async ({ page }) => {
+test('opens the complete circuit at desktop and supports fit and fullscreen', async ({ page }) => {
   const errors = captureRuntimeErrors(page);
-  await page.goto('/?seed=120&mode=advanced&type=R&difficulty=challenge&values=varied');
-  await expect(page.locator('.app-shell')).toHaveAttribute('data-qa-mode', 'true');
-  await expect(page.getByRole('group', { name: 'Circuito avanzado interactivo' })).toBeVisible();
+  await page.goto('/?seed=120&difficulty=challenge&type=R');
+  await expect(page.getByRole('heading', { name: /Entrenamiento/ })).toBeVisible();
+  await expect(page.getByRole('group', { name: 'Acciones del circuito' })).toBeVisible();
+  await expect(page.locator('svg[data-testid="circuit"]')).toBeVisible();
   await expectNoHorizontalDocumentOverflow(page);
-
-  const zoom = page.getByRole('button', { name: 'Ampliar' });
-  await zoom.click();
-  await expect(page.getByRole('button', { name: 'Ajustar' })).toHaveAttribute('aria-pressed', 'true');
+  await page.getByRole('button', { name: 'Acercar circuito' }).click();
+  await expect(page.getByText('150%')).toBeVisible();
   await page.getByRole('button', { name: 'Ajustar' }).click();
-
-  const fullscreen = page.getByRole('button', { name: 'Abrir mesa de trabajo en pantalla completa' });
-  await fullscreen.click();
-  await expect(page.locator('.circuit-panel')).toHaveClass(/is-fullscreen-workbench/);
+  await page.getByRole('button', { name: 'Pantalla completa' }).click();
+  await expect(page.locator('.workbench')).toHaveClass(/desk-fullscreen/);
   await page.keyboard.press('Escape');
-  await page.waitForTimeout(100);
+  await expect(page.locator('.workbench')).not.toHaveClass(/desk-fullscreen/);
   expect(errors).toEqual([]);
 });
 
-test('mouse, keyboard and touch can complete a deterministic basic exercise', async ({ page }, testInfo) => {
+test('selects through a physical SVG click and the accessible component panel', async ({ page }) => {
   const errors = captureRuntimeErrors(page);
-  await page.goto('/?seed=301&mode=basic&type=R&difficulty=guided&values=varied');
-  const components = page.locator('[data-component-id]');
-  const touchProject = ['pixel-7', 'iphone-13', 'tablet', 'mobile-landscape'].includes(testInfo.project.name);
-  if (touchProject) {
-    await components.nth(0).locator('[data-component-hitbox]').dispatchEvent('click');
-    await components.nth(1).locator('[data-component-hitbox]').dispatchEvent('click');
-    await page.locator('.topbar-quick').getByRole('button', { name: /^Serie/ }).click();
-  } else {
-    await components.nth(0).focus();
-    await page.keyboard.press('Enter');
-    await components.nth(1).focus();
-    await page.keyboard.press('Space');
-    await page.keyboard.press('KeyQ');
+  await page.goto('/?seed=301&difficulty=guided&type=R');
+  const component = page.locator('svg [data-component-id]').first();
+  await component.locator('[data-component-hitbox]').click();
+  await expect(component).toHaveAttribute('aria-pressed', 'true');
+  const selectedId = await component.getAttribute('data-component-id');
+  await expect(page.getByTestId(`component-${selectedId}`)).toHaveAttribute('aria-pressed', 'true');
+  expect(errors).toEqual([]);
+});
+
+test('reduces a chain of five resistors and capacitors with Q, then undoes and redoes', async ({ page }) => {
+  test.setTimeout(40_000);
+  const errors = captureRuntimeErrors(page);
+  for (const type of ['R', 'C']) {
+    await page.goto(`/?seed=378&difficulty=guided&type=${type}&values=equal`);
+    const move = await findManualMove(page);
+    expect(move.rule).toBe('series'); expect(move.ids.length).toBeGreaterThanOrEqual(4);
+    const count = await page.locator('svg [data-component-id]').count();
+    await performManualMove(page, move);
+    await expect(page.locator('svg [data-component-id]')).toHaveCount(count - move.ids.length + 1);
+    await page.keyboard.press('Control+z');
+    await expect(page.locator('svg [data-component-id]')).toHaveCount(count);
+    await page.keyboard.press('Control+y');
+    await expect(page.locator('svg [data-component-id]')).toHaveCount(count - move.ids.length + 1);
   }
-  await page.waitForTimeout(50);
-  await solveVisibleCircuit(page);
-  await expect(page.getByText(/Resistencia equivalente/)).toBeVisible();
   expect(errors).toEqual([]);
 });
 
-test('Q and E reduce capacitor selections from the keyboard', async ({ page }, testInfo) => {
-  test.skip(testInfo.project.name !== 'chromium', 'The shortcut contract runs once; other projects cover viewport input.');
+test('manual numeric entry rejects a wrong value, keeps the circuit and permits a correct retry', async ({ page }) => {
   const errors = captureRuntimeErrors(page);
-  await page.goto('/?seed=817&mode=basic&type=C&difficulty=guided&values=varied');
-
-  const components = page.locator('[data-component-id]');
-  await components.nth(0).focus();
-  await page.keyboard.press('Enter');
-  await components.nth(1).focus();
-  await page.keyboard.press('Space');
-
-  const beforeSeries = await components.count();
-  await page.keyboard.press('q');
-  await expect(components).toHaveCount(beforeSeries - 1);
-
-  const remaining = page.locator('[data-component-id]');
-  await remaining.nth(0).focus();
-  await page.keyboard.press('Enter');
-  await remaining.nth(1).focus();
-  await page.keyboard.press('Space');
-
-  const beforeNestedSeries = await remaining.count();
-  await page.keyboard.press('q');
-  await expect(remaining).toHaveCount(beforeNestedSeries - 1);
-
-  const finalPair = page.locator('[data-component-id]');
-  await finalPair.nth(0).focus();
-  await page.keyboard.press('Enter');
-  await finalPair.nth(1).focus();
-  await page.keyboard.press('Space');
-
-  const beforeParallel = await finalPair.count();
-  await page.keyboard.press('e');
-  await expect(finalPair).toHaveCount(beforeParallel - 1);
+  await page.goto('/?seed=378&difficulty=guided&type=R&values=equal&manual=true');
+  const move = await findManualMove(page), count = await page.locator('svg [data-component-id]').count();
+  await selectComponents(page, move.ids);
+  await page.keyboard.press(move.rule === 'series' ? 'q' : 'e');
+  await page.getByLabel(/Equivalente en/).fill('999');
+  await page.getByRole('button', { name: 'Confirmar valor' }).click();
+  await expect(page.getByText(/El valor no coincide/)).toBeVisible();
+  await expect(page.locator('svg [data-component-id]')).toHaveCount(count);
+  await page.getByLabel(/Equivalente en/).fill(move.rule === 'series' ? String(move.ids.length * 20) : String(20 / move.ids.length));
+  await page.getByRole('button', { name: 'Confirmar valor' }).click();
+  await expect(page.locator('svg [data-component-id]')).toHaveCount(count - move.ids.length + 1);
+  await expect(page.getByTestId('steps')).toHaveText('1');
+  await page.getByRole('button', { name: 'Historial' }).click();
   expect(errors).toEqual([]);
 });
 
-test('advanced capacitor challenge remains manually solvable after switch pruning', async ({ page }, testInfo) => {
-  test.skip(testInfo.project.name !== 'chromium', 'Full topology matrix runs once; viewport coverage is provided by the other tests.');
+test('capacitor settings and an unfinished timed exam survive page reload', async ({ page }) => {
+  await page.goto('/?seed=78&difficulty=practice&type=C&representation=symbolic');
+  await expect(page.locator('.component-panel')).toContainText('C');
+  await page.reload();
+  await expect(page.locator('.component-panel')).toContainText('C');
+  await page.getByText('Configurar práctica').click();
+  await page.getByLabel('Modalidad').selectOption('exam');
+  await page.getByLabel('Ejercicios del parcial').selectOption('3');
+  await page.getByLabel('Tiempo límite').selectOption('15');
+  await page.getByRole('button', { name: 'Comenzar parcial' }).click();
+  await expect(page.getByRole('button', { name: 'Pista conceptual' })).toHaveCount(0);
+  await page.reload();
+  await expect(page.getByText(/Parcial · 1\/3/)).toBeVisible();
+  await expect(page.locator('.exam-clock')).toBeVisible();
+});
+
+test('physical touch controls complete an exercise on mobile without horizontal overflow', async ({ page }, testInfo) => {
+  test.skip(!['pixel-7', 'iphone-13', 'tablet', 'mobile-landscape'].includes(testInfo.project.name));
+  test.setTimeout(60_000);
   const errors = captureRuntimeErrors(page);
-  await page.goto('/?seed=817&mode=advanced&type=C&difficulty=challenge&values=equal');
-  await solveVisibleCircuit(page);
-  await expect(page.getByText(/Capacitancia equivalente/)).toBeVisible();
+  await page.goto('/?seed=301&difficulty=guided&type=C');
+  await expectNoHorizontalDocumentOverflow(page);
+  await expect(page.locator('.component-panel')).toBeVisible();
+  for (const button of await page.locator('.component-option').all()) {
+    const box = await button.boundingBox(); expect(box.width).toBeGreaterThanOrEqual(44); expect(box.height).toBeGreaterThanOrEqual(44);
+  }
+  await solveVisibleCircuit(page, true);
+  await page.getByRole('button', { name: 'Entregar y continuar' }).click();
+  await expect(page.getByTestId('score')).toHaveText('10');
   expect(errors).toEqual([]);
+});
+
+test('physical touch removes an open switch from a dense mobile challenge', async ({ page }, testInfo) => {
+  test.skip(!['pixel-7', 'iphone-13', 'tablet', 'mobile-landscape'].includes(testInfo.project.name));
+  const errors = captureRuntimeErrors(page);
+  await page.goto('/?seed=2&difficulty=challenge&type=R');
+  const switchComponent = page.locator('svg [data-component-id][aria-label*="Interruptor"][aria-label*="Abierto"]').first();
+  await expect(switchComponent).toBeVisible();
+  const id = await switchComponent.getAttribute('data-component-id');
+  const before = await page.locator('svg [data-component-id]').count();
+  await selectComponents(page, [id], true);
+  const remove = page.getByRole('button', { name: 'Eliminar abierto' });
+  const box = await remove.boundingBox(), viewport = page.viewportSize();
+  expect(box).not.toBeNull(); expect(box.y).toBeGreaterThanOrEqual(0); expect(box.y + box.height).toBeLessThanOrEqual(viewport.height);
+  await page.touchscreen.tap(box.x + box.width / 2, box.y + box.height / 2);
+  await expect(switchComponent).toHaveCount(0);
+  expect(await page.locator('svg [data-component-id]').count()).toBeLessThan(before);
+  expect(errors).toEqual([]);
+});
+
+test('a three-question exam records one delivery and leaves a review', async ({ page }) => {
+  test.setTimeout(45_000);
+  await page.goto('/?seed=82&difficulty=guided&type=R');
+  await page.getByText('Configurar práctica').click();
+  await page.getByLabel('Modalidad').selectOption('exam');
+  await page.getByLabel('Ejercicios del parcial').selectOption('3');
+  await page.getByRole('button', { name: 'Comenzar parcial' }).click();
+  await solveVisibleCircuit(page);
+  await page.getByRole('button', { name: 'Entregar y continuar' }).click();
+  await expect(page.getByTestId('score')).toHaveText('10');
+  page.on('dialog', dialog => dialog.accept());
+  await page.getByRole('button', { name: 'Finalizar parcial' }).click();
+  await expect(page.getByRole('heading', { name: 'Parcial cerrado' })).toBeVisible();
+  await expect(page.locator('.exam-summary')).toContainText('1 de 3 ejercicios completos');
+  await expect(page.locator('.history-section')).toContainText('Incompleto');
 });

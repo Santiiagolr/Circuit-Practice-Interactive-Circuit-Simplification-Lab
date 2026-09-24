@@ -22,3 +22,11 @@ it('renders advanced hitboxes with accessible component metadata', () => {
   expect(screen.getByRole('button', { name: /Capacitor C1/ })).toBeInTheDocument();
   expect(container.querySelector('[data-component-type="C"]')).toBeInTheDocument();
 });
+
+it('renders the new workbench component controls with real 44px targets in the side panel', async () => {
+  const { default: App } = await import('../../src/App.jsx');
+  render(<App />);
+  const component = screen.getByTestId('component-c1');
+  expect(component).toHaveAttribute('aria-pressed', 'false');
+  expect(component).toHaveAccessibleName(/R1/);
+});

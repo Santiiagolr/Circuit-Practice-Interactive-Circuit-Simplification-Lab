@@ -80,6 +80,19 @@ function reduceGraph(nodes, edges, compType) {
   let guard = 0;
 
   while (currentEdges.length > 1 && guard < 400) {
+    // An open switch is a user action, not a reducible edge. Remove it first,
+    // then let the legacy smoke evaluator continue on the pruned network.
+    const openSwitch = currentEdges.find((edge) => edge.compType === 'S' && edge.switchState === 'open');
+    if (openSwitch) {
+      const pruned = deleteGraphEdge(currentNodes, currentEdges, openSwitch.id);
+      currentNodes = pruned.nodes;
+      currentEdges = pruned.edges;
+      assert.ok(currentEdges.length > 0, 'Removing an open switch must leave a conducting A-B network.');
+      assert.equal(isSolvable(currentNodes, currentEdges), true);
+      guard += 1;
+      continue;
+    }
+
     let move = null;
 
     for (let firstIndex = 0; firstIndex < currentEdges.length && !move; firstIndex += 1) {
