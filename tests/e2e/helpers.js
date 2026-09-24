@@ -11,6 +11,20 @@ export async function expectNoHorizontalDocumentOverflow(page) {
   const size = await page.evaluate(() => ({ client: document.documentElement.clientWidth, scroll: document.documentElement.scrollWidth }));
   expect(size.scroll).toBeLessThanOrEqual(size.client + 1);
 }
+export async function visibleLabelOverlaps(page) {
+  return page.locator('svg[data-testid="circuit"]').evaluate(svg => {
+    const labels = [...svg.querySelectorAll('.component-id, .component-value')].filter(item => getComputedStyle(item).display !== 'none');
+    const symbols = [...svg.querySelectorAll('.electrical-symbol')];
+    const intersects = (a, b) => a.left < b.right - 1 && a.right > b.left + 1 && a.top < b.bottom - 1 && a.bottom > b.top + 1;
+    const overlaps = [];
+    for (let i = 0; i < labels.length; i++) {
+      const box = labels[i].getBoundingClientRect();
+      for (let j = i + 1; j < labels.length; j++) if (intersects(box, labels[j].getBoundingClientRect())) overlaps.push([labels[i].textContent, labels[j].textContent]);
+      for (const symbol of symbols) if (intersects(box, symbol.getBoundingClientRect())) overlaps.push([labels[i].textContent, symbol.closest('[data-component-id]')?.dataset.componentId]);
+    }
+    return overlaps;
+  });
+}
 function degrees(edges) {
   const map = new Map();
   for (const edge of edges) for (const node of [edge.from, edge.to]) map.set(node, (map.get(node) || 0) + 1);

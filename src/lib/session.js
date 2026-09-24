@@ -87,7 +87,7 @@ export function sessionReducer(state, action) {
       if (state.exam?.status === 'active') return state;
       const settings = normalizeSettings({ ...state.settings, ...action.settings });
       const visualOnly = Object.keys(action.settings).every(key => ['flow', 'resistorStyle'].includes(key));
-      if (visualOnly) return { ...state, settings };
+      if (visualOnly) return record({ ...state, settings }, { kind: 'configuration', settings: action.settings }, now);
       const recorded = record(state, { kind: 'configuration', settings: action.settings }, now);
       return spawn({ ...recorded, settings, exam: null, history: [...state.history, resultRecord(recorded, now, 'abandoned')].slice(-200) }, seed, now);
     }

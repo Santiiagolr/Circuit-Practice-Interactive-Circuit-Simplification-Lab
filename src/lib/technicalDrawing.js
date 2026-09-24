@@ -1,5 +1,6 @@
 import { astToNetwork } from './topology.js';
 import { makeEdgeGeometry, pointsToPath } from './svgGeometry.js';
+import { formatExact } from './values.js';
 
 const same = (a, b) => Math.abs(a.x - b.x) < 0.01 && Math.abs(a.y - b.y) < 0.01;
 const point = (x, y) => ({ x, y });
@@ -164,22 +165,39 @@ function intersectsBox(a, b, box, pad = 0) {
   return true;
 }
 const boxesOverlap = (a, b, pad = 0) => a.x < b.x + b.w + pad && a.x + a.w + pad > b.x && a.y < b.y + b.h + pad && a.y + a.h + pad > b.y;
-export function drawingGeometry(exercise) {
+export function drawingGeometry(exercise, scale = null) {
   const buses = busRoutes(exercise);
   const paths = [...exercise.edges.map(edge => ({ id: edge.id, route: edge.route })), ...buses, { id: 'source', route: exercise.sourceRoute }];
-  const geometries = exercise.edges.map(edge => ({ edge, ...makeEdgeGeometry(simplifyRoute(edge.route), { symbolLength: 38 }) }));
-  const occupied = geometries.map(g => ({ x: g.centerX - 24, y: g.centerY - 24, w: 48, h: 48 }));
+  const responsive = Number.isFinite(scale) && scale > 0;
+  const symbolLength = responsive ? Math.max(38, 12 / scale) : 38;
+  const geometries = exercise.edges.map(edge => ({ edge, ...makeEdgeGeometry(simplifyRoute(edge.route), { symbolLength, symbolBaseLength: 38 }) }));
+  const occupied = geometries.map(g => {
+    const angle = g.angle * Math.PI / 180, length = g.symbolScale * 38;
+    const w = Math.max(48, Math.abs(Math.cos(angle)) * length + Math.abs(Math.sin(angle)) * 24 + 8);
+    const h = Math.max(48, Math.abs(Math.sin(angle)) * length + Math.abs(Math.cos(angle)) * 24 + 8);
+    return { x: g.centerX - w / 2, y: g.centerY - h / 2, w, h };
+  });
   const labels = [];
   for (const [geometryIndex, geometry] of geometries.entries()) {
     const { centerX: x, centerY: y, angle } = geometry;
     const vertical = Math.abs(Math.sin(angle * Math.PI / 180)) > 0.8;
-    const labelWidth = vertical ? 96 : 112, labelHeight = 34;
-    const options = vertical
-      ? [[12, -17], [-labelWidth - 12, -17], [12, -57], [-labelWidth - 12, -57], [12, 21], [-labelWidth - 12, 21]]
-      : [[-56, -64], [-56, 30], [-112, -64], [0, 30]];
+    const idSize = responsive ? Math.max(14, 11 / scale) : 14;
+    const valueSize = responsive ? Math.max(12, 10 / scale) : 12;
+    const showValue = !responsive || scale >= 0.5;
+    const labelWidth = responsive
+      ? Math.max(vertical ? 96 : 112, geometry.edge.label.length * idSize * 0.63 + 16, showValue ? formatExact(geometry.edge.value, exercise.settings, true).length * valueSize * 0.63 + 16 : 0)
+      : vertical ? 96 : 112;
+    const labelHeight = responsive ? 8 + idSize + (showValue ? valueSize + 4 : 0) : 34;
+    const options = responsive
+      ? vertical
+        ? [[18, -labelHeight / 2], [-labelWidth - 18, -labelHeight / 2], [18, -labelHeight - 24], [-labelWidth - 18, -labelHeight - 24], [18, 24], [-labelWidth - 18, 24]]
+        : [[-labelWidth / 2, -labelHeight - 28], [-labelWidth / 2, 28], [-labelWidth - 28, -labelHeight - 28], [28, 28], [-labelWidth / 2, -labelHeight - 58], [-labelWidth / 2, 58]]
+      : vertical
+        ? [[12, -17], [-labelWidth - 12, -17], [12, -57], [-labelWidth - 12, -57], [12, 21], [-labelWidth - 12, 21]]
+        : [[-56, -64], [-56, 30], [-112, -64], [0, 30]];
     let box = null;
     for (const [dx, dy] of options) {
-      const candidate = { x: x + dx, y: y + dy, w: labelWidth, h: labelHeight };
+      const candidate = { x: x + dx, y: y + dy, w: labelWidth, h: labelHeight, idSize, valueSize, showValue };
       if (candidate.x < 4 || candidate.y < 4 || candidate.x + candidate.w > exercise.bounds.width - 4 || candidate.y + candidate.h > exercise.bounds.height - 4) continue;
       if (occupied.some((item, index) => index !== geometryIndex && boxesOverlap(item, candidate, 2)) || labels.some(item => boxesOverlap(item, candidate, 5))) continue;
       if (paths.some(path => segments(path.route).some(([a, b]) => intersectsBox(a, b, candidate, 3)))) continue;
@@ -188,7 +206,7 @@ export function drawingGeometry(exercise) {
     geometry.labelBox = box;
     if (box) labels.push(box);
   }
-  return { geometries, buses, paths };
+  return { geometries, buses, paths, hiddenLabels: geometries.length - labels.length };
 }
 function segmentIntersection(a, b, c, d) {
   const cross = (x, y, z) => (y.x - x.x) * (z.y - x.y) - (y.y - x.y) * (z.x - x.x);

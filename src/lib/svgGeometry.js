@@ -60,7 +60,7 @@ export function makeEdgeGeometry(routePoints, options = {}) {
     angle: Math.atan2(segmentDy, segmentDx) * (180 / Math.PI),
     centerX: center.x,
     centerY: center.y,
-    symbolScale: symbolLength / symbolLengthLimit,
+    symbolScale: symbolLength / (options.symbolBaseLength || symbolLengthLimit),
     visibleFirstPath: pointsToPath(firstPathPoints),
     visibleSecondPath: pointsToPath(secondPathPoints),
     labelX: labelCenterX,

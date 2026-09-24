@@ -20,18 +20,21 @@ Date: 2026-09-24
 6. **Manual-answer E2E used an incorrect expected value for a selected group.** The test now derives the answer from the actual selected IDs.
 7. **Valid JSON could still contain an invalid saved exam/history shape.** Session restore now validates active/finished exam results, attempts, selected IDs, undo/redo stacks, and history entries; malformed session data falls back safely while the separate saved score remains intact.
 8. **Two advertised geometric families did not actually render diagonals.** The triangle template was attached at the wrong tree level and could be silently retried as an unrelated family. It is now a nested series-parallel cell; the diagonal uses existing terminal ports so node connectivity stays intact and no resistor is drawn over a bus. Unit and browser tests assert a non-orthogonal component angle. The depth-limited guided mode remains orthogonal; intermediate and advanced modes include the triangular variants.
+9. **Dense diagrams made SVG text and hit targets too small after fitting.** Browser measurements found IDs as small as 3.8 px, values as small as 1.4 px, and some hitboxes smaller than 44 px in advanced exercises. Label layout and electrical-symbol gaps now use the actual rendered SVG scale. Values move to the synchronized detail list when the overview is dense; labels that cannot fit without collision are omitted from the drawing until zoomed. Across a dense challenge at desktop, iPhone portrait, and mobile landscape, visible IDs measure at least 11 px and SVG hitboxes at least 44 px. The view prompts users to zoom or use the list if labels are hidden.
+10. **Conductor formula feedback was misleading.** It could display `1/(Cable)` in a reciprocal reduction. The explanation now distinguishes wire/open outcomes and substitutes zero or infinity where appropriate; unit tests cover resistor and capacitor cases.
+11. **Appearance-only changes were absent from the attempt log.** Flow and resistor-style changes now record a configuration event without resetting the exercise or breaking the streak.
 
 ## Verification evidence
 
 - `npm run lint`: passed.
-- `npm run build`: passed; production JS 278.72 kB (89.21 kB gzip), CSS 20.12 kB (5.11 kB gzip).
-- `npm run test:unit`: 108 tests passed across 10 files, including malformed session/exam recovery and real-diagonal geometry.
+- `npm run build`: passed; production JS 280.70 kB (89.90 kB gzip), CSS 20.18 kB (5.12 kB gzip).
+- `npm run test:unit`: 110 tests passed across 10 files, including malformed session/exam recovery, real-diagonal geometry, conductor explanations, and configuration logging.
 - `npm run test:circuits`: passed; 245 unique basic and 283 unique advanced legacy signatures, 25 open-switch deletion cases.
-- `npm run test:stress`: 24,000 generated circuits and 388,396 post-reduction states checked across R/C, three levels, numeric/symbolic, equal/varied. Two reduction orders were compared against an independent evaluator. No geometry failures or fallback circuits; worst observed generation p95 was 0.62 ms (limit: 50 ms). The campaign recorded 5,644 diagonal cases in intermediate/advanced families.
-- `npm run test:e2e -- --workers=1 --reporter=line`: 50 passed, 6 intentionally skipped across Chromium, Edge, WebKit, Pixel 7, iPhone 13, tablet, and mobile landscape. The touch flows physically tap reductions and open-switch removal; no horizontal document overflow or runtime errors.
-- `npm run test:visual -- --workers=1 --reporter=line`: 7 passed, 9 skipped by project-specific coverage; desktop/tablet/iPhone portrait/landscape baselines and all six geometric families plus Chromium selection/error/equivalent/result/open-switch states were updated and reviewed.
+- `npm run test:stress`: 24,000 generated circuits and 388,396 post-reduction states checked across R/C, three levels, numeric/symbolic, equal/varied. Two reduction orders were compared against an independent evaluator. No geometry failures or fallback circuits; worst observed generation p95 was 1.13 ms (limit: 50 ms). The campaign recorded 5,644 diagonal cases in intermediate/advanced families.
+- `npm run test:e2e`: 55 passed, 22 intentionally skipped by project-specific scope across Chromium, Edge, WebKit, Pixel 7, iPhone 13, tablet, and mobile landscape. Added browser completion of all six R/C × difficulty combinations, a symbolic capacitor fraction, and dense-layout pixel measurements. Touch flows physically tap reductions and open-switch removal; no horizontal document overflow or runtime errors.
+- `npm run test:visual`: 7 passed, 9 skipped by project-specific coverage; desktop/tablet/iPhone portrait/landscape baselines and all six geometric families plus Chromium selection/error/equivalent/result/open-switch states were updated and reviewed. The family browser check also rejects visible label/label and label/symbol overlap.
 - `npm run test:a11y -- --workers=1 --reporter=line`: 3 passed, 3 project-specific skips; axe reported no serious or critical violations in its Chromium/WebKit initial-state checks.
-- `npm run test:lighthouse`: passed in the final QA run; performance 97, accessibility 100.
+- `npm run test:lighthouse`: passed in the final QA run; performance 99, accessibility 100.
 - `npm run test:launcher`: passed for missing requirements, a project path containing spaces, occupied-port fallback, and process/port cleanup.
 - Firefox launch was attempted separately; Playwright failed before loading the application with `browserType.launch: spawn UNKNOWN` for the installed Firefox binary.
 
@@ -39,6 +42,7 @@ Date: 2026-09-24
 
 - Firefox is not verified on this Windows host until its Playwright runtime launches successfully. This is an environment/browser startup failure, not an application assertion failure.
 - Pixel/iPhone touch checks use Playwright's device emulation and touchscreen API; a physical-device pass remains useful before release.
+- On especially dense mobile landscape diagrams, not all IDs can fit at a legible size in the complete overview. Zoom and the synchronized list expose every component, and the drawing caption explains this tradeoff. This is intentional rather than allowing text collisions or sub-11-pixel labels.
 - Browser storage remains best-effort by design. When disabled or corrupt, the interface continues without durable session persistence and displays a warning.
 
 Visual snapshots are platform-specific. If the design changes intentionally, regenerate them with `npm run test:visual -- --update-snapshots` and inspect the resulting images before accepting them.

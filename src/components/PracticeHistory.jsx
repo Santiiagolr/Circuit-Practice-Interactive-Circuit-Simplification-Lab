@@ -3,7 +3,17 @@ export function ReductionExplanation({ step, settings }) {
   if (!step) return null;
   if (step.rule === 'delete') return <p>Un interruptor abierto interrumpe la rama. Los componentes sin camino entre A y B dejan de contribuir.</p>;
   const additive = (settings.compType === 'R') === (step.rule === 'series'), symbol = settings.compType;
-  return <div className="formula-explanation"><p>{step.rule === 'series' ? 'Serie' : 'Paralelo'}: {additive ? `${symbol}eq = ${symbol}1 + ${symbol}2 + …` : `1/${symbol}eq = 1/${symbol}1 + 1/${symbol}2 + …`}</p><p className="numeric">{additive ? '' : '1 / ('}{step.components.map(item => `${additive ? '' : '1/('}${formatExact(item.value, settings)}${additive ? '' : ')'}`).join(' + ')}{additive ? '' : ')'} = {formatExact(step.equivalent.value, settings)}</p></div>;
+  const unit = symbol === 'R' ? settings.rUnit || 'Ω' : settings.cUnit || 'µF';
+  const zero = settings.representation === 'symbolic' ? `0${symbol}` : `0 ${unit}`;
+  const infinite = settings.representation === 'symbolic' ? `∞${symbol}` : `∞ ${unit}`;
+  if (step.equivalent.value.kind === 'wire') return <div className="formula-explanation"><p>{step.rule === 'parallel' ? 'Un camino conductor ideal en paralelo cortocircuita los terminales.' : 'La cadena formada solo por conductores ideales equivale a un cable.'}</p><p className="numeric">{symbol}eq = {symbol === 'R' ? zero : infinite} → Cable</p></div>;
+  if (step.equivalent.value.kind === 'open') return <div className="formula-explanation"><p>Una rama abierta en serie interrumpe el camino eléctrico.</p><p className="numeric">{symbol}eq = {symbol === 'R' ? infinite : zero} → Abierto</p></div>;
+  const term = item => {
+    if (item.value.kind === 'wire') return additive ? zero : '0';
+    if (item.value.kind === 'open') return additive ? infinite : '0';
+    return additive ? formatExact(item.value, settings) : `1/(${formatExact(item.value, settings)})`;
+  };
+  return <div className="formula-explanation"><p>{step.rule === 'series' ? 'Serie' : 'Paralelo'}: {additive ? `${symbol}eq = ${symbol}1 + ${symbol}2 + …` : `1/${symbol}eq = 1/${symbol}1 + 1/${symbol}2 + …`}</p><p className="numeric">{additive ? '' : '1 / ('}{step.components.map(term).join(' + ')}{additive ? '' : ')'} = {formatExact(step.equivalent.value, settings)}</p></div>;
 }
 function AttemptList({ item }) {
   return <ol className="attempt-list">{item.attempts.map((attempt, index) => <li key={index}>{attempt.kind === 'reduction' ? <><span>{attempt.components.map(c => c.label).join(', ')} → {attempt.equivalent?.label || 'Rama eliminada'}</span><ReductionExplanation step={attempt} settings={item.settings} /></> : attempt.kind === 'error' ? <span className="error-text">{attempt.message}{attempt.answer ? ` Respuesta: ${attempt.answer}.` : ''}</span> : ({ undo: 'Deshacer', redo: 'Rehacer', hint: 'Pista consultada', configuration: 'Configuración cambiada' }[attempt.kind] || attempt.kind)}</li>)}</ol>;

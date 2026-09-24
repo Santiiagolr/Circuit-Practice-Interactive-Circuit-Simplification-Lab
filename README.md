@@ -37,6 +37,7 @@ The challenge ends when the network is manually reduced to one equivalent compon
 - Keyboard support: `Q` applies Series, `E` applies Parallel, and `Ctrl/Cmd+Z` / `Ctrl/Cmd+Shift+Z` undo and redo.
 - Optional full-screen workbench and mobile **Enlarge / Fit** controls.
 - A synchronized component list with 44 px touch targets and action controls that remain reachable while scrolling on portrait and landscape phones.
+- Dense diagrams keep component IDs legible where space permits; when the overview cannot fit every label, zoom and the synchronized list provide the remaining names and full values without shrinking the tap targets.
 - Offline self-hosted typography: no external font request is required.
 - No Delta-Star transformations.
 
@@ -225,6 +226,7 @@ El desafío termina cuando la red se reduce manualmente a un único componente e
 - Teclado: `Q` aplica Serie, `E` aplica Paralelo y `Ctrl/Cmd+Z` / `Ctrl/Cmd+Shift+Z` deshacen y rehacen.
 - Mesa de trabajo en pantalla completa y controles móviles **Ampliar / Ajustar**.
 - Lista de componentes sincronizada, controles táctiles de 44 px y acciones accesibles al desplazarse en teléfonos verticales y horizontales.
+- En diagramas densos, los identificadores conservan un tamaño legible donde hay espacio; si no entran todos en la vista general, el zoom y la lista sincronizada muestran los restantes y sus valores completos sin achicar las zonas táctiles.
 - Tipografías locales: la aplicación no depende de Google Fonts ni de conexión externa.
 - No utiliza transformaciones Delta-Estrella.
 

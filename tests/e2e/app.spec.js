@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test';
-import { captureRuntimeErrors, expectNoHorizontalDocumentOverflow, findManualMove, performManualMove, selectComponents, solveVisibleCircuit } from './helpers';
+import { captureRuntimeErrors, expectNoHorizontalDocumentOverflow, findManualMove, performManualMove, selectComponents, solveVisibleCircuit, visibleLabelOverlaps } from './helpers';
 
 test('opens the complete circuit at desktop and supports fit and fullscreen', async ({ page }) => {
   const errors = captureRuntimeErrors(page);
@@ -130,4 +130,62 @@ test('a three-question exam records one delivery and leaves a review', async ({ 
   await expect(page.getByRole('heading', { name: 'Parcial cerrado' })).toBeVisible();
   await expect(page.locator('.exam-summary')).toContainText('1 de 3 ejercicios completos');
   await expect(page.locator('.history-section')).toContainText('Incompleto');
+});
+
+test('completes every component and difficulty combination through the visible controls', async ({ page }, testInfo) => {
+  test.skip(testInfo.project.name !== 'chromium');
+  test.setTimeout(120_000);
+  const errors = captureRuntimeErrors(page);
+  let seed = 920;
+  for (const type of ['R', 'C']) for (const difficulty of ['guided', 'practice', 'challenge']) {
+    await page.goto(`/?seed=${seed++}&difficulty=${difficulty}&type=${type}`);
+    await solveVisibleCircuit(page);
+    await expect(page.getByRole('region', { name: 'Circuito reducido' })).toBeVisible();
+    await expectNoHorizontalDocumentOverflow(page);
+    await page.getByRole('button', { name: 'Entregar y continuar' }).click();
+    await expect(page.getByTestId('score')).not.toHaveText('0');
+    await page.evaluate(() => document.fonts.ready);
+  }
+  expect(errors).toEqual([]);
+});
+
+test('accepts an exact symbolic fraction after a manual capacitor reduction', async ({ page }, testInfo) => {
+  test.skip(testInfo.project.name !== 'chromium');
+  await page.goto('/?seed=378&difficulty=guided&type=C&values=equal&representation=symbolic&manual=true');
+  const move = await findManualMove(page);
+  expect(move.rule).toBe('series');
+  await selectComponents(page, move.ids);
+  await page.keyboard.press('q');
+  await page.getByLabel(/Equivalente en/).fill(`2/${move.ids.length}C`);
+  await page.getByRole('button', { name: 'Confirmar valor' }).click();
+  await expect(page.getByTestId('steps')).toHaveText('1');
+  await expect(page.locator('.feedback-strip.success')).toBeVisible();
+});
+
+test('dense overview keeps readable IDs and large SVG targets while offering detail and ambiguity choices', async ({ page }, testInfo) => {
+  test.skip(!['chromium', 'iphone-13', 'mobile-landscape'].includes(testInfo.project.name));
+  await page.goto('/?seed=416&difficulty=challenge&type=R');
+  await expect(page.locator('svg [data-component-id]')).toHaveCount(15);
+  await expect.poll(async () => page.locator('svg[data-testid="circuit"]').evaluate(svg => {
+    const labels = [...svg.querySelectorAll('.component-id')];
+    const scale = svg.getScreenCTM().a;
+    return labels.length ? Math.min(...labels.map(label => parseFloat(getComputedStyle(label).fontSize) * scale)) : 0;
+  })).toBeGreaterThanOrEqual(10.9);
+  const metrics = await page.locator('svg[data-testid="circuit"]').evaluate(svg => {
+    const hitboxes = [...svg.querySelectorAll('[data-component-hitbox]')].map(hitbox => hitbox.getBoundingClientRect());
+    return { ids: svg.querySelectorAll('.component-id').length, values: svg.querySelectorAll('.component-value').length, width: Math.min(...hitboxes.map(box => box.width)), height: Math.min(...hitboxes.map(box => box.height)) };
+  });
+  expect(metrics.ids).toBeGreaterThan(0);
+  expect(metrics.values).toBe(0);
+  expect(metrics.width).toBeGreaterThanOrEqual(43.5);
+  expect(metrics.height).toBeGreaterThanOrEqual(43.5);
+  expect(await visibleLabelOverlaps(page)).toEqual([]);
+  await expect(page.locator('.component-panel')).toContainText('R15');
+  await expectNoHorizontalDocumentOverflow(page);
+  if (testInfo.project.name === 'mobile-landscape') {
+    const hitbox = page.locator('svg [data-component-id]').first().locator('[data-component-hitbox]');
+    const box = await hitbox.boundingBox();
+    await page.touchscreen.tap(box.x + box.width / 2, box.y + box.height / 2);
+    await expect(page.getByRole('group', { name: 'Componentes cercanos' })).toBeVisible();
+  }
 });

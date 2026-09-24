@@ -51,6 +51,14 @@ it('preserves streak when changing config, requesting hints and undoing', () => 
   expect(s.progress).toMatchObject({ streak: 5, score: 100 });
   expect(s.history.at(-1).attempts.at(-1).kind).toBe('configuration');
 });
+it('records appearance changes without resetting the exercise or streak', () => {
+  let s = createSession({ seed: 10, progress: { streak: 3 }, now: 0 });
+  const exercise = s.current.exercise;
+  s = act(s, 'settings', { settings: { resistorStyle: 'rectangle' } });
+  expect(s.current.exercise).toBe(exercise);
+  expect(s.current.attempts.at(-1)).toMatchObject({ kind: 'configuration', settings: { resistorStyle: 'rectangle' } });
+  expect(s.progress.streak).toBe(3);
+});
 it('restores the full session and exact wire/open tags, migrates old progress', () => {
   const db = storage(); db.setItem(PROGRESS_KEY, JSON.stringify({ score: 75, streak: 3, bestStreak: 7, completed: 8 }));
   let s = loadSession({ storage: db, now: 4 }).state;
