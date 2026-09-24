@@ -19,18 +19,19 @@ Date: 2026-09-24
 5. **Fullscreen Escape behavior was inconsistent.** Escape now exits native fullscreen and clears the CSS fallback state.
 6. **Manual-answer E2E used an incorrect expected value for a selected group.** The test now derives the answer from the actual selected IDs.
 7. **Valid JSON could still contain an invalid saved exam/history shape.** Session restore now validates active/finished exam results, attempts, selected IDs, undo/redo stacks, and history entries; malformed session data falls back safely while the separate saved score remains intact.
+8. **Two advertised geometric families did not actually render diagonals.** The triangle template was attached at the wrong tree level and could be silently retried as an unrelated family. It is now a nested series-parallel cell; the diagonal uses existing terminal ports so node connectivity stays intact and no resistor is drawn over a bus. Unit and browser tests assert a non-orthogonal component angle. The depth-limited guided mode remains orthogonal; intermediate and advanced modes include the triangular variants.
 
 ## Verification evidence
 
 - `npm run lint`: passed.
-- `npm run build`: passed; production JS 278.67 kB (89.22 kB gzip), CSS 20.12 kB (5.11 kB gzip).
-- `npm run test:unit`: 106 tests passed across 10 files, including malformed session/exam recovery.
+- `npm run build`: passed; production JS 278.72 kB (89.21 kB gzip), CSS 20.12 kB (5.11 kB gzip).
+- `npm run test:unit`: 108 tests passed across 10 files, including malformed session/exam recovery and real-diagonal geometry.
 - `npm run test:circuits`: passed; 245 unique basic and 283 unique advanced legacy signatures, 25 open-switch deletion cases.
-- `npm run test:stress`: 24,000 generated circuits and 389,288 post-reduction states checked across R/C, three levels, numeric/symbolic, equal/varied. Two reduction orders were compared against an independent evaluator. No geometry failures or fallback circuits; worst observed generation p95 was under 0.8 ms (limit: 50 ms).
+- `npm run test:stress`: 24,000 generated circuits and 388,396 post-reduction states checked across R/C, three levels, numeric/symbolic, equal/varied. Two reduction orders were compared against an independent evaluator. No geometry failures or fallback circuits; worst observed generation p95 was 0.62 ms (limit: 50 ms). The campaign recorded 5,644 diagonal cases in intermediate/advanced families.
 - `npm run test:e2e -- --workers=1 --reporter=line`: 50 passed, 6 intentionally skipped across Chromium, Edge, WebKit, Pixel 7, iPhone 13, tablet, and mobile landscape. The touch flows physically tap reductions and open-switch removal; no horizontal document overflow or runtime errors.
-- `npm run test:visual -- --workers=1 --reporter=line`: 6 passed, 6 skipped by project-specific coverage; desktop/tablet/iPhone portrait/landscape baselines and Chromium selection/error/equivalent/result/open-switch states were updated and reviewed.
+- `npm run test:visual -- --workers=1 --reporter=line`: 7 passed, 9 skipped by project-specific coverage; desktop/tablet/iPhone portrait/landscape baselines and all six geometric families plus Chromium selection/error/equivalent/result/open-switch states were updated and reviewed.
 - `npm run test:a11y -- --workers=1 --reporter=line`: 3 passed, 3 project-specific skips; axe reported no serious or critical violations in its Chromium/WebKit initial-state checks.
-- `npm run test:lighthouse`: passed in the final QA run; performance 100, accessibility 100.
+- `npm run test:lighthouse`: passed in the final QA run; performance 97, accessibility 100.
 - `npm run test:launcher`: passed for missing requirements, a project path containing spaces, occupied-port fallback, and process/port cleanup.
 - Firefox launch was attempted separately; Playwright failed before loading the application with `browserType.launch: spawn UNKNOWN` for the installed Firefox binary.
 
