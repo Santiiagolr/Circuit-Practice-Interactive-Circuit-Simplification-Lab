@@ -16,6 +16,8 @@ The challenge ends when the network is manually reduced to one equivalent compon
 
 - Three reasoning levels: **Basic** (4–6 elements), **Intermediate** (7–10), and **Advanced** (11–15).
 - **Training** and configurable mock exams (3, 5, or 10 exercises, with an optional timer).
+- **Topic practice** for resistor/capacitor series and parallel: two short topology checks followed by a full, manually reduced circuit focused on that rule.
+- A progress view that separates topic accuracy, delivered circuits, free practice, and no-reward repeats.
 - Six geometric circuit families: rectangular frames, ladders, stacked cells, crossbars, triangular cells, and integrated diagonals.
 - Seeded random circuits; electrical validity and drawing geometry are checked before an exercise is shown.
 - Support for:
@@ -31,7 +33,9 @@ The challenge ends when the network is manually reduced to one equivalent compon
 - Manual interaction: the student must select, reason, and execute every operation.
 - Visual feedback for selections, topology errors, successful combinations, and circuit state.
 - Manual undo/redo, formula substitutions, optional conceptual hints in Training, and a reviewable exercise history.
+- Verified step-by-step circuit replay and repeat of a past exercise without awarding points twice.
 - Persistent score, clean-solve streaks, best streak, and difficulty-based bonuses stored locally.
+- Light/dark laboratory themes and remembered practice settings.
 - Optional illustrative current-flow animation for resistor exercises.
 - Responsive SVG rendering for desktop, tablet, and mobile screens.
 - Keyboard support: `Q` applies Series, `E` applies Parallel, and `Ctrl/Cmd+Z` / `Ctrl/Cmd+Shift+Z` undo and redo.
@@ -126,12 +130,13 @@ Firefox is available as a separate project. On this Windows host, its Playwright
 
 ### How to play
 
-1. Choose Training or Mock Exam, a difficulty, and resistors or capacitors.
-2. Select two or more components that can be reduced together; the component list and diagram stay synchronized.
-3. Decide whether they are connected in series or in parallel. `Q` and `E` apply those rules.
-4. If an open switch appears, select it and use **Remove (Open)**.
-5. In Training, optionally request a hint or review a formula after reducing. In an exam, review is available after submission.
-6. Continue until one equivalent remains, then deliver the exercise to record its reward.
+1. Choose **Free Practice**, a focused **Topic**, or a **Mock Exam**, then select a difficulty and resistors or capacitors.
+2. In a Topic, answer two brief node-based questions before continuing to its full circuit. Mini questions track learning and streaks but do not award points.
+3. Select two or more components that can be reduced together; the component list and diagram stay synchronized.
+4. Decide whether they are connected in series or in parallel. `Q` and `E` apply those rules.
+5. If an open switch appears, select it and use **Remove (Open)**.
+6. In Training, optionally request a hint or review a formula after reducing. In an exam, review is available after submission.
+7. Continue until one equivalent remains, then deliver the exercise to record its reward. Delivered circuits remain available in History for verified replay or a no-reward repeat.
 
 Correctly delivered exercises build a streak and award difficulty-based points plus the existing streak bonus. An incorrect electrical or numeric answer resets the active streak; hints, undo/redo, and interface-only issues do not. Progress and in-progress mock exams are saved locally when browser storage is available.
 

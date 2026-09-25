@@ -39,15 +39,48 @@ test('keeps a delivered circuit visible, replays its verified steps and allows a
   await expect(page.getByRole('button', { name: 'Siguiente ejercicio' })).toBeVisible();
   const score = await page.getByTestId('score').textContent();
   await page.getByRole('button', { name: 'Historial' }).click();
+  await page.locator('.history-entry > summary').first().click();
   await page.getByText('Recorrido gráfico paso a paso').click();
   await expect(page.getByText(/Paso 0 de/)).toBeVisible();
   await page.getByRole('button', { name: 'Siguiente', exact: true }).click();
   await expect(page.getByText(/Paso 1 de/)).toBeVisible();
+  await page.getByRole('button', { name: 'Por temas' }).click();
+  await page.getByRole('button', { name: 'Empezar tema' }).first().click();
   await page.getByRole('button', { name: 'Repetir sin puntos' }).click();
+  await expect(page.locator('.workbench')).toBeVisible();
+  await expect(page.locator('.topics-page')).toHaveCount(0);
   await expect(page.getByTestId('score')).toHaveText(score);
   await solveVisibleCircuit(page);
   await page.getByRole('button', { name: 'Entregar resultado' }).click();
   await expect(page.getByTestId('score')).toHaveText(score);
+});
+
+test('runs the continuous topic cycle and preserves topic progress on reload', async ({ page }) => {
+  test.setTimeout(60_000);
+  const errors = captureRuntimeErrors(page);
+  await page.goto('/?seed=621&type=R&difficulty=guided');
+  await page.getByRole('button', { name: 'Por temas' }).click();
+  await page.getByRole('button', { name: 'Empezar tema' }).first().click();
+  await expect(page.getByText('Diagnóstico 1 / 2')).toBeVisible();
+  await page.getByRole('button', { name: 'Sí, cumplen la regla' }).click();
+  await expect(page.locator('.mini-feedback')).toBeVisible();
+  await page.getByRole('button', { name: 'Siguiente mini ejercicio' }).click();
+  await expect(page.getByText('Diagnóstico 2 / 2')).toBeVisible();
+  await page.getByRole('button', { name: 'No, hay otra conexión' }).click();
+  await page.getByRole('button', { name: 'Continuar al circuito completo' }).click();
+  await expect(page.locator('.exercise-heading')).toContainText('Tema · R · Serie');
+  expect(await page.locator('svg [data-component-id]').count()).toBeGreaterThanOrEqual(4);
+  await solveVisibleCircuit(page);
+  await page.getByRole('button', { name: 'Entregar resultado' }).click();
+  await expect(page.getByRole('button', { name: 'Siguiente ejercicio' })).toBeVisible();
+  await page.getByRole('button', { name: 'Siguiente ejercicio' }).click();
+  await expect(page.getByText('Diagnóstico 1 / 2')).toBeVisible();
+  await page.reload();
+  await expect(page.locator('.topics-page')).toBeVisible();
+  await page.getByRole('button', { name: 'Progreso' }).click();
+  await expect(page.locator('.progress-page')).toContainText('1 circuito del tema');
+  await expectNoHorizontalDocumentOverflow(page);
+  expect(errors).toEqual([]);
 });
 
 test('selects through a physical SVG click and the accessible component panel', async ({ page }) => {
@@ -155,7 +188,7 @@ test('a three-question exam records one delivery and leaves a review', async ({ 
   await page.getByLabel('Ejercicios del parcial').selectOption('3');
   await page.getByRole('button', { name: 'Comenzar parcial' }).click();
   await solveVisibleCircuit(page);
-  await page.getByRole('button', { name: 'Entregar resultado' }).click();
+  await page.getByRole('button', { name: 'Entregar y continuar' }).click();
   await expect(page.getByTestId('score')).toHaveText('10');
   page.on('dialog', dialog => dialog.accept());
   await page.getByRole('button', { name: 'Finalizar parcial' }).click();
@@ -215,9 +248,25 @@ test('dense overview keeps readable IDs and large SVG targets while offering det
   await expect(page.locator('.component-panel')).toContainText('R15');
   await expectNoHorizontalDocumentOverflow(page);
   if (testInfo.project.name === 'mobile-landscape') {
-    const hitbox = page.locator('svg [data-component-id]').first().locator('[data-component-hitbox]');
+    const component = page.locator('svg [data-component-id]').first();
+    const hitbox = component.locator('[data-component-hitbox]');
+    await hitbox.scrollIntoViewIfNeeded();
+    const proximity = await component.evaluate(target => {
+      const svg = target.ownerSVGElement, matrix = svg.getScreenCTM();
+      const centers = [...svg.querySelectorAll('[data-component-id]')].map(item => {
+        const match = item.querySelector(':scope > g').getAttribute('transform').match(/translate\(([-\d.]+) ([-\d.]+)/);
+        const point = new DOMPoint(Number(match[1]), Number(match[2])).matrixTransform(matrix);
+        return { id: item.dataset.componentId, x: point.x, y: point.y };
+      });
+      const selected = centers.find(center => center.id === target.dataset.componentId);
+      return { count: centers.filter(center => Math.hypot(center.x - selected.x, center.y - selected.y) < 36).length, label: target.getAttribute('aria-label').match(/\b[A-Z]\d+\b/)?.[0] };
+    });
     const box = await hitbox.boundingBox();
     await page.touchscreen.tap(box.x + box.width / 2, box.y + box.height / 2);
-    await expect(page.getByRole('group', { name: 'Componentes cercanos' })).toBeVisible();
+    const picker = page.getByRole('group', { name: 'Componentes cercanos' });
+    if (proximity.count > 1) {
+      await expect(picker).toBeVisible();
+      await picker.getByRole('button', { name: new RegExp(`^${proximity.label} `) }).click();
+    } else await expect(component).toHaveAttribute('aria-pressed', 'true');
   }
 });

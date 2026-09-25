@@ -37,12 +37,13 @@ it('prunes an entire hanging loop after manually removing an open switch', () =>
   const final = reduceAll(e);
   expect(expectClose(numericValue(final.edges[0].value, 'R'), evaluateGraphNetwork(e.nodes, e.edges, 'R'))).toBe(true);
 });
-it('ignores mirrored order, values and labels in signatures and avoids twenty recent structures', () => {
+it('keeps topology signatures value-independent and avoids twenty recent diagram variants', () => {
   const recent = [];
   for (let seed = 0; seed < 100; seed++) {
     const e = generateExercise({}, seed, recent);
     expect(recent).not.toContain(e.signature);
     recent.push(e.signature); if (recent.length > 20) recent.shift();
-    expect(structuralSignature({ ...e.tree, children: [...e.tree.children].reverse() })).toBe(e.signature);
+    expect(structuralSignature({ ...e.tree, children: [...e.tree.children].reverse() })).toBe(e.topologySignature);
+    expect(e.signature).toBe(`${e.topologySignature}|family:${e.familyIndex}`);
   }
 });

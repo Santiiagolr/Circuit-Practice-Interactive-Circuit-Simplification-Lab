@@ -8,6 +8,15 @@ test('responsive full-circuit overview baseline', async ({ page }, testInfo) => 
   await expect(page.locator('.workbench')).toHaveScreenshot(`workbench-${testInfo.project.name}.png`, { animations: 'disabled', maxDiffPixelRatio: 0.002 });
 });
 
+test('topic overview and focused mini exercise remain readable', async ({ page }, testInfo) => {
+  test.skip(testInfo.project.name !== 'chromium');
+  await page.goto('/?seed=829&type=C');
+  await page.getByRole('button', { name: 'Por temas' }).click();
+  await expect(page.locator('.topics-page')).toHaveScreenshot('topics-overview.png', { animations: 'disabled', maxDiffPixelRatio: 0.002 });
+  await page.getByRole('button', { name: 'Empezar tema' }).nth(3).click();
+  await expect(page.locator('.mini-card')).toHaveScreenshot('topic-mini-exercise.png', { animations: 'disabled', maxDiffPixelRatio: 0.002 });
+});
+
 test('all six geometric families keep their symbols, labels, and routes legible', async ({ page }, testInfo) => {
   test.skip(testInfo.project.name !== 'chromium');
   const examples = [

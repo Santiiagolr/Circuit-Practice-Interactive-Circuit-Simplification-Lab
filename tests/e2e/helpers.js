@@ -97,7 +97,7 @@ export async function performManualMove(page, move, touch = false) {
 }
 export async function solveVisibleCircuit(page, touch = false, max = 80) {
   for (let step = 0; step < max; step++) {
-    if (await page.getByRole('button', { name: 'Entregar resultado' }).count()) return;
+    if (await page.getByRole('button', { name: /^Entregar/ }).count()) return;
     const before = await page.locator('svg [data-component-id]').count();
     await performManualMove(page, await findManualMove(page), touch);
     await expect.poll(() => page.locator('svg [data-component-id]').count()).toBeLessThan(before);

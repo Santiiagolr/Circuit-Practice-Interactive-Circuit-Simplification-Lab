@@ -5,6 +5,7 @@ import { isComplete, prepareReduction } from '../../src/lib/exercise.js';
 import { nextMove } from '../helpers/manualMoves.js';
 import { parseQaConfig } from '../../src/lib/qaConfig.js';
 import { reconstructHistory } from '../../src/lib/practiceReview.js';
+import { createMiniExercise } from '../../src/lib/topicPractice.js';
 const act = (s, type, extra = {}) => sessionReducer(s, { type, now: 1000, ...extra });
 function move(state) {
   const next = nextMove(state.current.exercise, false, true);
@@ -95,6 +96,54 @@ it('repeats a delivered exercise without issuing additional points and reconstru
   expect(finished.progress.score).toBe(score);
   expect(finished.history.at(-1).repeat).toBe(true);
   expect(reconstructHistory({ ...item, attempts: [{ ...item.attempts.find(attempt => attempt.kind === 'reduction'), components: [{ id: 'missing', label: 'R', value: { kind: 'finite', n: '1', d: '1' } }] }] }).valid).toBe(false);
+});
+it('cycles topic minis into a focused manual circuit, tracks topic stats, and separates mini rewards', () => {
+  let s = createSession({ seed: 61, progress: { score: 20, streak: 3, bestStreak: 4 }, now: 0 });
+  s = act(s, 'start-topic', { topicId: 'C-parallel', seed: 300 });
+  expect(s.topicSession).toMatchObject({ phase: 'mini', miniIndex: 0, minisInCycle: 0 });
+  expect(s.settings).toMatchObject({ compType: 'C', focusRule: 'parallel' });
+  const first = createMiniExercise('C-parallel', 300, 0, s.settings);
+  s = act(s, 'topic-answer', { answer: first.answer });
+  expect(s.progress).toMatchObject({ score: 20, streak: 3 });
+  s = act(s, 'continue-topic');
+  const second = createMiniExercise('C-parallel', 300, 1, s.settings);
+  s = act(s, 'topic-answer', { answer: second.answer === 'yes' ? 'no' : 'yes' });
+  expect(s.progress.streak).toBe(0);
+  s = act(s, 'continue-topic');
+  expect(s.topicSession.phase).toBe('circuit');
+  expect(s.current.exercise.tree.type).toBe('parallel');
+  while (!isComplete(s.current.exercise)) s = move(s);
+  s = act(s, 'submit');
+  expect(s.topicProgress['C-parallel']).toMatchObject({ minis: 2, miniCorrect: 1, miniErrors: 1, circuits: 1 });
+  expect(s.history.at(-1).status).toBe('complete');
+  s = act(s, 'next');
+  expect(s.topicSession).toMatchObject({ phase: 'mini', cycles: 1, minisInCycle: 0 });
+});
+it('does not duplicate abandoned history while switching or leaving topic mini rounds', () => {
+  let s = createSession({ seed: 62, now: 0 });
+  s = act(s, 'start-topic', { topicId: 'R-series', seed: 301 });
+  expect(s.history).toHaveLength(1);
+  s = act(s, 'start-topic', { topicId: 'C-parallel', seed: 302 });
+  expect(s.history).toHaveLength(1);
+  s = act(s, 'exit-topic');
+  expect(s.history).toHaveLength(1);
+  expect(s.topicSession).toBeNull();
+});
+it('exits topic mode safely on incompatible settings and clears it before repeating history', () => {
+  let s = createSession({ seed: 63, now: 0 });
+  s = act(s, 'start-topic', { topicId: 'R-series', seed: 303 });
+  s = act(s, 'settings', { settings: { compType: 'C', focusRule: null } });
+  expect(s.topicSession).toBeNull();
+  expect(s.settings).toMatchObject({ compType: 'C', focusRule: null });
+  expect(s.history).toHaveLength(1);
+
+  s = complete(s); s = act(s, 'submit');
+  const item = s.history.at(-1);
+  s = act(s, 'start-topic', { topicId: 'C-parallel', seed: 304 });
+  s = act(s, 'repeat', { item });
+  expect(s.topicSession).toBeNull();
+  expect(s.current.exercise.seed).toBe(item.seed);
+  expect(s.current.rewardEligible).toBe(false);
 });
 it('restores the full session and exact wire/open tags, migrates old progress', () => {
   const db = storage(); db.setItem(PROGRESS_KEY, JSON.stringify({ score: 75, streak: 3, bestStreak: 7, completed: 8 }));

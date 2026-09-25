@@ -13,6 +13,23 @@ test('initial exercise and keyboard controls have no serious accessibility viola
   expect(errors).toEqual([]);
 });
 
+test('topic minis and progress navigation remain accessible without horizontal overflow', async ({ page }, testInfo) => {
+  test.skip(!['chromium', 'webkit', 'iphone-13'].includes(testInfo.project.name));
+  await page.goto('/?seed=91&type=C');
+  await page.getByRole('button', { name: 'Por temas' }).click();
+  await page.getByRole('button', { name: 'Empezar tema' }).nth(3).click();
+  const audit = await new AxeBuilder({ page }).analyze();
+  expect(audit.violations.filter(item => ['critical', 'serious'].includes(item.impact))).toEqual([]);
+  for (const answer of await page.locator('.mini-answers button').all()) {
+    const box = await answer.boundingBox();
+    expect(box.height).toBeGreaterThanOrEqual(44);
+  }
+  await expectNoHorizontalDocumentOverflow(page);
+  await page.getByRole('button', { name: 'Progreso' }).click();
+  const progressAudit = await new AxeBuilder({ page }).analyze();
+  expect(progressAudit.violations.filter(item => ['critical', 'serious'].includes(item.impact))).toEqual([]);
+});
+
 test('the mobile detail list exposes named, operable 44px touch targets', async ({ page }, testInfo) => {
   test.skip(!['pixel-7', 'iphone-13', 'tablet', 'mobile-landscape'].includes(testInfo.project.name));
   await page.goto('/?seed=913&difficulty=challenge&type=C');

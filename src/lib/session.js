@@ -1,15 +1,18 @@
 import { generateExercise, normalizeSettings, isComplete, inspectExercise, prepareReduction, reduceExercise } from './exercise.js';
 import { normalizeProgress, calculateReward, applyReward, PROGRESS_KEY } from './gameState.js';
 import { isExactValue, parseAnswer, answersMatch } from './values.js';
+import { createMiniExercise, createTopicProgress, TOPICS, validateTopicProgress, validateTopicSession } from './topicPractice.js';
 
 export const SESSION_KEY = 'circuit-practice:session:v2';
 const currentExercise = (exercise, now, rewardEligible = true) => ({ exercise, startedAt: now, selected: [], past: [], future: [], attempts: [], pending: null, notice: null, submitted: false, rewardEligible });
+const recentKey = settings => settings.focusRule ? `${settings.difficulty}:${settings.compType}:${settings.focusRule}` : settings.difficulty;
 function spawn(state, seed, now) {
-  const exercise = generateExercise(state.settings, seed, state.recent[state.settings.difficulty] || []);
-  return { ...state, recent: { ...state.recent, [state.settings.difficulty]: [...(state.recent[state.settings.difficulty] || []), exercise.signature].slice(-20) }, current: currentExercise(exercise, now) };
+  const key = recentKey(state.settings), recent = state.recent[key] || (state.settings.focusRule ? [] : state.recent[state.settings.difficulty] || []);
+  const exercise = generateExercise(state.settings, seed, recent, state.settings.focusRule);
+  return { ...state, recent: { ...state.recent, [key]: [...recent, exercise.signature].slice(-20) }, current: currentExercise(exercise, now) };
 }
 export function createSession({ settings, progress, seed = Date.now(), qaKey = null, now = Date.now() } = {}) {
-  return spawn({ version: 2, settings: normalizeSettings(settings), progress: normalizeProgress(progress), recent: {}, history: [], exam: null, qaKey }, seed, now);
+  return spawn({ version: 2, settings: normalizeSettings(settings), progress: normalizeProgress(progress), topicProgress: createTopicProgress(), topicSession: null, recent: {}, history: [], exam: null, qaKey }, seed, now);
 }
 function record(state, event, now) {
   return { ...state, current: { ...state.current, attempts: [...state.current.attempts, { ...event, at: now }].slice(-1000) } };
@@ -19,7 +22,9 @@ function report(state, message, kind = 'info') {
 }
 function wrong(state, message, now, detail) {
   const next = record(state, { kind: 'error', message, ...detail }, now);
-  return report({ ...next, progress: { ...next.progress, streak: 0 } }, state.exam?.status === 'active' ? 'Respuesta incorrecta. Podés reintentar.' : message, 'error');
+  const topicSession = state.topicSession?.phase === 'circuit' ? state.topicSession : null;
+  const topicProgress = topicSession ? { ...state.topicProgress, [topicSession.topicId]: { ...state.topicProgress[topicSession.topicId], circuitErrors: state.topicProgress[topicSession.topicId].circuitErrors + 1 } } : state.topicProgress;
+  return report({ ...next, progress: { ...next.progress, streak: 0 }, topicProgress }, state.exam?.status === 'active' ? 'Respuesta incorrecta. Podés reintentar.' : message, 'error');
 }
 function commit(state, ids, rule, now) {
   const result = reduceExercise(state.current.exercise, ids, rule);
@@ -29,8 +34,14 @@ function commit(state, ids, rule, now) {
 }
 function resultRecord(state, now, status, reward = null) {
   const { exercise, attempts, startedAt } = state.current;
-  return { id: exercise.id, seed: exercise.seed, settings: exercise.settings, family: exercise.family, initial: state.current.past[0] || exercise, final: exercise, attempts, status, reward, repeat: !state.current.rewardEligible,
+  return { id: exercise.id, seed: exercise.seed, settings: exercise.settings, family: exercise.family, topicId: state.topicSession?.phase === 'circuit' ? state.topicSession.topicId : null, initial: state.current.past[0] || exercise, final: exercise, attempts, status, reward, repeat: !state.current.rewardEligible,
     steps: attempts.filter(item => item.kind === 'reduction').length, errors: attempts.filter(item => item.kind === 'error').length, undos: attempts.filter(item => item.kind === 'undo').length, elapsed: Math.max(0, now - startedAt) };
+}
+function historyWithAbandoned(state, now) {
+  // Topic mini rounds do not own current.exercise. That exercise was already
+  // archived on entry, so leaving or switching topics must not archive it twice.
+  if (state.current.submitted || state.topicSession?.phase === 'mini') return state.history;
+  return [...state.history, resultRecord(state, now, 'abandoned')].slice(-200);
 }
 function expire(state, now) {
   if (state.exam?.status !== 'active' || !state.exam.deadline || now < state.exam.deadline) return state;
@@ -86,32 +97,77 @@ export function sessionReducer(state, action) {
       const message = selected.length ? 'Seguí los terminales de tu selección. Dos terminales comunes indican paralelo; un nodo intermedio sin derivaciones permite serie. La orientación del dibujo no cambia la conexión.' : 'Buscá nodos, no formas. En serie, el nodo compartido tiene solo dos conexiones. En paralelo, las ramas comparten ambos extremos.';
       return report(next, message);
     }
+    case 'start-topic': {
+      if (state.exam?.status === 'active') return state;
+      const topic = TOPICS.find(item => item.id === action.topicId);
+      if (!topic) return state;
+      const settings = normalizeSettings({ ...state.settings, mode: 'training', compType: topic.compType, focusRule: topic.rule });
+      const topicSession = { topicId: topic.id, phase: 'mini', seed: Number(action.seed ?? Number(current.exercise.seed) + 1), miniIndex: 0, minisInCycle: 0, answered: false, lastAnswer: null, lastCorrect: null, cycles: 0 };
+      const history = historyWithAbandoned(state, now);
+      return { ...state, settings, exam: null, topicSession, topicProgress: state.topicProgress || createTopicProgress(), history };
+    }
+    case 'topic-answer': {
+      const topicSession = state.topicSession;
+      if (!topicSession || topicSession.phase !== 'mini' || topicSession.answered || !['yes', 'no'].includes(action.answer)) return state;
+      const topic = TOPICS.find(item => item.id === topicSession.topicId);
+      if (!topic) return report(state, 'El tema guardado no se pudo verificar.', 'error');
+      let mini;
+      try { mini = createMiniExercise(topic.id, topicSession.seed, topicSession.miniIndex, state.settings); }
+      catch { return report(state, 'El mini ejercicio no superó la verificación y no se registró una respuesta.', 'error'); }
+      const correct = mini.answer === action.answer;
+      const counts = state.topicProgress[topic.id] || { minis: 0, miniCorrect: 0, miniErrors: 0, circuits: 0, circuitErrors: 0 };
+      return { ...state, progress: correct ? state.progress : { ...state.progress, streak: 0 }, topicProgress: { ...state.topicProgress, [topic.id]: { ...counts, minis: counts.minis + 1, miniCorrect: counts.miniCorrect + Number(correct), miniErrors: counts.miniErrors + Number(!correct) } }, topicSession: { ...topicSession, answered: true, minisInCycle: topicSession.minisInCycle + 1, lastAnswer: action.answer, lastCorrect: correct } };
+    }
+    case 'continue-topic': {
+      const topicSession = state.topicSession;
+      if (!topicSession || topicSession.phase !== 'mini' || !topicSession.answered) return state;
+      if (topicSession.minisInCycle < 2) return { ...state, topicSession: { ...topicSession, miniIndex: topicSession.miniIndex + 1, answered: false, lastAnswer: null, lastCorrect: null } };
+      const topic = TOPICS.find(item => item.id === topicSession.topicId);
+      if (!topic) return state;
+      const nextSession = { ...topicSession, phase: 'circuit', answered: false, lastAnswer: null, lastCorrect: null };
+      return spawn({ ...state, topicSession: nextSession }, Number(action.seed ?? topicSession.seed + topicSession.cycles + 1), now);
+    }
     case 'settings': {
       if (state.exam?.status === 'active') return state;
       const settings = normalizeSettings({ ...state.settings, ...action.settings });
       const visualOnly = Object.keys(action.settings).every(key => ['flow', 'resistorStyle', 'theme'].includes(key));
       if (visualOnly) return record({ ...state, settings }, { kind: 'configuration', settings: action.settings }, now);
+      if (state.topicSession?.phase === 'mini' && Object.keys(action.settings).every(key => key === 'difficulty')) {
+        return record({ ...state, settings }, { kind: 'configuration', settings: action.settings }, now);
+      }
       const recorded = record(state, { kind: 'configuration', settings: action.settings }, now);
-      return spawn({ ...recorded, settings, exam: null, history: (current.submitted ? state.history : [...state.history, resultRecord(recorded, now, 'abandoned')]).slice(-200) }, seed, now);
+      const topic = TOPICS.find(item => item.id === state.topicSession?.topicId);
+      const topicSession = state.topicSession && settings.mode === 'training' && settings.compType === topic?.compType && settings.focusRule === topic?.rule ? state.topicSession : null;
+      return spawn({ ...recorded, settings, topicSession, exam: null, history: historyWithAbandoned(recorded, now) }, seed, now);
     }
     case 'new':
       if (state.exam?.status === 'active') return state;
-      return spawn({ ...state, history: (current.submitted ? state.history : [...state.history, resultRecord(state, now, 'abandoned')]).slice(-200), exam: null }, seed, now);
+      if (state.topicSession?.phase === 'mini') return spawn({ ...state, settings: normalizeSettings({ ...state.settings, focusRule: null }), topicSession: null, history: historyWithAbandoned(state, now), exam: null }, seed, now);
+      return spawn({ ...state, history: historyWithAbandoned(state, now), exam: null }, seed, now);
     case 'next':
       if (!current.submitted || state.settings.mode === 'exam') return state;
+      if (state.topicSession?.phase === 'circuit') return { ...state, topicSession: { ...state.topicSession, phase: 'mini', miniIndex: state.topicSession.miniIndex + 1, minisInCycle: 0, answered: false, lastAnswer: null, lastCorrect: null, cycles: state.topicSession.cycles + 1 } };
       return spawn(state, seed, now);
+    case 'exit-topic': {
+      if (!state.topicSession || state.exam?.status === 'active') return state;
+      const settings = normalizeSettings({ ...state.settings, focusRule: null, mode: 'training' });
+      const history = historyWithAbandoned(state, now);
+      return spawn({ ...state, settings, topicSession: null, exam: null, history }, seed, now);
+    }
     case 'repeat': {
       if (state.exam?.status === 'active' || !validHistoryItem(action.item) || !action.item.initial || !action.item.settings || !Number.isFinite(action.item.seed)) return state;
-      const settings = normalizeSettings({ ...action.item.settings, mode: 'training' });
-      const exercise = generateExercise(settings, action.item.seed, []);
+      const exerciseSettings = normalizeSettings({ ...action.item.settings, mode: 'training' });
+      const settings = normalizeSettings({ ...exerciseSettings, focusRule: null });
+      const exercise = generateExercise(exerciseSettings, action.item.seed, []);
       exercise.id = `${action.item.id}:repeat:${state.history.length}:${now}`;
-      const recent = [...(state.recent[settings.difficulty] || []), exercise.signature].slice(-20);
-      const history = current.submitted ? state.history : [...state.history, resultRecord(state, now, 'abandoned')].slice(-200);
-      return { ...state, settings, exam: null, recent: { ...state.recent, [settings.difficulty]: recent }, current: currentExercise(exercise, now, false), history };
+      const key = recentKey(exerciseSettings), recent = [...(state.recent[key] || []), exercise.signature].slice(-20);
+      const history = historyWithAbandoned(state, now);
+      return { ...state, settings, topicSession: null, exam: null, recent: { ...state.recent, [key]: recent }, current: currentExercise(exercise, now, false), history };
     }
     case 'start-exam': {
       if (state.exam?.status === 'active') return state;
-      return spawn({ ...state, settings: { ...state.settings, mode: 'exam' }, exam: { status: 'active', count: state.settings.examCount, startedAt: now, deadline: state.settings.examMinutes ? now + state.settings.examMinutes * 60000 : null, results: [] } }, seed, now);
+      const settings = normalizeSettings({ ...state.settings, mode: 'exam', focusRule: null });
+      return spawn({ ...state, settings, topicSession: null, exam: { status: 'active', count: state.settings.examCount, startedAt: now, deadline: state.settings.examMinutes ? now + state.settings.examMinutes * 60000 : null, results: [] } }, seed, now);
     }
     case 'finish-exam': {
       if (state.exam?.status !== 'active') return state;
@@ -123,6 +179,10 @@ export function sessionReducer(state, action) {
       const item = resultRecord(state, now, 'complete', reward);
       if (current.rewardEligible !== false && state.history.some(entry => entry.id === item.id && entry.status === 'complete' && !entry.repeat)) return state;
       const next = { ...state, progress: reward ? applyReward(state.progress, reward) : state.progress, history: [...state.history, item].slice(-200), current: { ...current, submitted: true, selected: [], pending: null } };
+      if (state.topicSession?.phase === 'circuit') {
+        const counts = state.topicProgress[state.topicSession.topicId];
+        next.topicProgress = { ...state.topicProgress, [state.topicSession.topicId]: { ...counts, circuits: counts.circuits + 1 } };
+      }
       if (state.exam?.status === 'active') {
         next.exam = { ...state.exam, results: [...state.exam.results, item] };
         if (next.exam.results.length === next.exam.count) { next.exam.status = 'finished'; return next; }
@@ -161,7 +221,7 @@ function validHistoricalExercise(exercise) {
   return !exercise || Boolean(exercise && Array.isArray(exercise.edges) && exercise.edges.length > 0 && exercise.edges.length <= 30 && exercise.edges.every(edge => edge && validStoredValue(edge.value)));
 }
 function validHistoryItem(item) {
-  return Boolean(item && typeof item.id === 'string' && ['complete', 'incomplete', 'abandoned'].includes(item.status) && (item.repeat == null || typeof item.repeat === 'boolean') && ['steps', 'errors', 'undos', 'elapsed'].every(key => Number.isFinite(item[key]) && item[key] >= 0) && Array.isArray(item.attempts) && item.attempts.length <= 1000 && item.attempts.every(validAttempt) && (item.settings == null || typeof item.settings === 'object') && validHistoricalExercise(item.initial) && validHistoricalExercise(item.final) && (item.reward == null || Number.isFinite(item.reward.points) && item.reward.points >= 0));
+  return Boolean(item && typeof item.id === 'string' && ['complete', 'incomplete', 'abandoned'].includes(item.status) && (item.topicId == null || TOPICS.some(topic => topic.id === item.topicId)) && (item.repeat == null || typeof item.repeat === 'boolean') && ['steps', 'errors', 'undos', 'elapsed'].every(key => Number.isFinite(item[key]) && item[key] >= 0) && Array.isArray(item.attempts) && item.attempts.length <= 1000 && item.attempts.every(validAttempt) && (item.settings == null || typeof item.settings === 'object') && validHistoricalExercise(item.initial) && validHistoricalExercise(item.final) && (item.reward == null || Number.isFinite(item.reward.points) && item.reward.points >= 0));
 }
 function validSession(saved) {
   if (!saved || saved.version !== 2 || !validExercise(saved.current?.exercise)) return false;
@@ -176,6 +236,13 @@ function validSession(saved) {
     if (!verified.valid || JSON.stringify(verified.value) !== JSON.stringify(current.pending.value)) return false;
   }
   if (!Array.isArray(saved.history) || saved.history.length > 200 || !saved.history.every(validHistoryItem) || !saved.recent || typeof saved.recent !== 'object' || Object.values(saved.recent).some(items => !Array.isArray(items) || items.length > 20 || items.some(signature => typeof signature !== 'string'))) return false;
+  if (saved.topicProgress != null && !validateTopicProgress(saved.topicProgress)) return false;
+  if (saved.topicSession != null) {
+    if (!validateTopicSession(saved.topicSession)) return false;
+    const topic = TOPICS.find(item => item.id === saved.topicSession.topicId);
+    if (saved.settings?.mode !== 'training' || saved.settings?.compType !== topic.compType || saved.settings?.focusRule !== topic.rule) return false;
+    if (saved.topicSession.phase === 'circuit' && saved.current.exercise.tree?.type !== topic.rule) return false;
+  }
   if (saved.exam == null) return true;
   const exam = saved.exam;
   if (!['active', 'finished'].includes(exam.status) || ![3, 5, 10].includes(exam.count) || !Number.isFinite(exam.startedAt) || !(exam.deadline == null || Number.isFinite(exam.deadline)) || !Array.isArray(exam.results) || exam.results.length > exam.count || !exam.results.every(validHistoryItem) || saved.settings?.mode !== 'exam' || exam.count !== saved.settings.examCount) return false;
@@ -194,6 +261,7 @@ export function loadSession({ storage, qa, now = Date.now() } = {}) {
         if (!validSession(saved)) throw new Error('Sesión dañada');
         saved.settings = normalizeSettings(saved.settings); saved.progress = normalizeProgress(saved.progress);
         saved.current.rewardEligible ??= true;
+        saved.topicProgress ??= createTopicProgress(); saved.topicSession ??= null;
         return { state: sessionReducer(saved, { type: 'tick', now }), warning };
       }
     }

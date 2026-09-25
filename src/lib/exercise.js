@@ -13,11 +13,11 @@ export const DEFAULT_SETTINGS = Object.freeze({
   mode: 'training', difficulty: 'guided', compType: 'R', valueMode: 'varied',
   representation: 'numeric', resistorStyle: 'zigzag', manual: false,
   flow: false, rUnit: 'Ω', cUnit: 'µF', examCount: 5, examMinutes: 0,
-  theme: 'light',
+  theme: 'light', focusRule: null,
 });
 export function normalizeSettings(value = {}) {
   const next = { ...DEFAULT_SETTINGS };
-  const choices = { mode: ['training', 'exam'], difficulty: Object.keys(LEVELS), compType: ['R', 'C'], valueMode: ['varied', 'equal'], representation: ['numeric', 'symbolic'], resistorStyle: ['zigzag', 'rectangle'], rUnit: ['Ω', 'kΩ'], cUnit: ['µF', 'nF'], examCount: [3, 5, 10], examMinutes: [0, 15, 30, 60], theme: ['light', 'dark'] };
+  const choices = { mode: ['training', 'exam'], difficulty: Object.keys(LEVELS), compType: ['R', 'C'], valueMode: ['varied', 'equal'], representation: ['numeric', 'symbolic'], resistorStyle: ['zigzag', 'rectangle'], rUnit: ['Ω', 'kΩ'], cUnit: ['µF', 'nF'], examCount: [3, 5, 10], examMinutes: [0, 15, 30, 60], theme: ['light', 'dark'], focusRule: [null, 'series', 'parallel'] };
   for (const [key, options] of Object.entries(choices)) if (options.includes(value[key])) next[key] = value[key];
   for (const key of ['manual', 'flow']) if (typeof value[key] === 'boolean') next[key] = value[key];
   return next;
@@ -29,6 +29,11 @@ export function structuralSignature(node) {
   if (node.type === 'parallel') children.sort();
   const forward = children.join(','), reverse = [...children].reverse().join(',');
   return `${node.type === 'series' ? 'S' : 'P'}(${forward < reverse ? forward : reverse})`;
+}
+// Keep electrical structure distinct from a drawing variation. Recent-exercise
+// avoidance uses both so a small topology family can still yield fresh layouts.
+export function diagramSignature(node, familyIndex) {
+  return `${structuralSignature(node)}|family:${familyIndex}`;
 }
 export function evaluateExactTree(node, type) {
   return node.type === 'leaf' ? node.value : combineValues(node.children.map(child => evaluateExactTree(child, type)), node.type, type);
@@ -86,8 +91,9 @@ export function inspectExercise(exercise) {
   return { valid: true, status: 'valid', code: 'valid-exercise' };
 }
 
-export function generateExercise(input = DEFAULT_SETTINGS, seed = Date.now(), recent = []) {
+export function generateExercise(input = DEFAULT_SETTINGS, seed = Date.now(), recent = [], forcedRule = input?.focusRule ?? null) {
   const settings = normalizeSettings(input), level = LEVELS[settings.difficulty];
+  const focusRule = ['series', 'parallel'].includes(forcedRule) ? forcedRule : null;
   for (let attempt = 0; attempt < 512; attempt++) {
     const random = createSeededRandom(`${seed}:${settings.difficulty}:${attempt}`);
     let nextLeaf = 0, nextGroup = 0;
@@ -122,6 +128,7 @@ export function generateExercise(input = DEFAULT_SETTINGS, seed = Date.now(), re
       const remainder = rest.length ? regroup(rest, 2, 'series') : null;
       tree = remainder ? { type: 'series', id: `g${++nextGroup}`, children: [triangle, remainder] } : triangle;
     }
+    if (focusRule && tree.type !== focusRule) continue;
     if (!tree.children.some(child => child.type !== 'leaf')) continue;
     if (settings.difficulty !== 'guided' && random() < 0.7) {
       const treeLeaves = [];
@@ -137,10 +144,11 @@ export function generateExercise(input = DEFAULT_SETTINGS, seed = Date.now(), re
     }
     const expected = numericValue(evaluateExactTree(tree, settings.compType), settings.compType);
     if (!(expected > 0 && Number.isFinite(expected))) continue;
-    const signature = structuralSignature(tree);
+    const topologySignature = structuralSignature(tree);
+    const signature = diagramSignature(tree, family);
     if (recent.slice(-20).includes(signature)) continue;
     const network = layoutNetwork(tree, family);
-    const exercise = { ...network, tree, id: `exercise-${seed}`, seed, signature, family: FAMILIES[family], familyIndex: family, attempt, fallback: false, settings, revision: 0, nextEquivalent: 1, initialCount: leaves.length };
+    const exercise = { ...network, tree, id: `exercise-${seed}`, seed, signature, topologySignature, family: FAMILIES[family], familyIndex: family, attempt, fallback: false, settings, revision: 0, nextEquivalent: 1, initialCount: leaves.length };
     // Geometry is validated before it becomes visible, not merely in a test runner.
     if (inspectDrawing(exercise).length) continue;
     return exercise;
