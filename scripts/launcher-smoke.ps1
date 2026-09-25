@@ -3,7 +3,7 @@ $ErrorActionPreference = 'Stop'
 $workspace = (Resolve-Path -LiteralPath (Join-Path $PSScriptRoot '..')).Path
 $compiler = 'C:\Windows\Microsoft.NET\Framework64\v4.0.30319\csc.exe'
 $source = Join-Path $workspace 'tools\CircuitPracticeLauncher\CircuitPracticeLauncher.cs'
-$tempRoot = Join-Path $workspace 'tmp\launcher smoke'
+$tempRoot = Join-Path ([IO.Path]::GetTempPath()) ('CircuitPracticeLauncherSmoke-' + [guid]::NewGuid().ToString('N'))
 $tempExe = Join-Path $tempRoot 'CircuitPracticeLauncher.exe'
 
 if (-not (Test-Path -LiteralPath $compiler -PathType Leaf)) {

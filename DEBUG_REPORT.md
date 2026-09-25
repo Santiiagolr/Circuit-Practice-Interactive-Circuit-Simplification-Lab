@@ -6,6 +6,7 @@ Date: 2026-09-24
 
 - Replaced the split visual paths with one exercise contract, exact R/C arithmetic, shared topology checks, atomic reductions, and six checked geometric diagram families. Existing circuit-engine exports remain available through adapters.
 - Added difficulty-scaled generation (4–6, 7–10, 11–15), exact symbolic `R`/`C`, numeric units, manually entered equivalent values, switch/wire semantics, formula feedback, and reproducible QA seeds.
+- Added four focused topic cycles (R/C × series/parallel), node-reasoning mini exercises, topic progress, verified history replay, and no-reward repeats.
 - Added Training and mock exams, optional clock, review/history, persistent session, manual undo/redo with attempts retained, and exactly-once exercise rewards.
 - Rebuilt the workbench around the complete SVG, a synchronized component list, touch-friendly controls, fullscreen/zoom, reduced-motion-aware flow, and distinct electrical symbols.
 - Retained the manual-only constraint. No automatic solver or Delta-Star rule was added.
@@ -23,24 +24,29 @@ Date: 2026-09-24
 9. **Dense diagrams made SVG text and hit targets too small after fitting.** Browser measurements found IDs as small as 3.8 px, values as small as 1.4 px, and some hitboxes smaller than 44 px in advanced exercises. Label layout and electrical-symbol gaps now use the actual rendered SVG scale. Values move to the synchronized detail list when the overview is dense; labels that cannot fit without collision are omitted from the drawing until zoomed. Across a dense challenge at desktop, iPhone portrait, and mobile landscape, visible IDs measure at least 11 px and SVG hitboxes at least 44 px. The view prompts users to zoom or use the list if labels are hidden.
 10. **Conductor formula feedback was misleading.** It could display `1/(Cable)` in a reciprocal reduction. The explanation now distinguishes wire/open outcomes and substitutes zero or infinity where appropriate; unit tests cover resistor and capacitor cases.
 11. **Appearance-only changes were absent from the attempt log.** Flow and resistor-style changes now record a configuration event without resetting the exercise or breaking the streak.
+12. **Focused basic exercises could exhaust the recent-diagram filter.** The topology-only pool for a focused basic rule contained fewer than 20 variants, so a correct no-repeat policy could reject every candidate. Generation now keeps an electrical `topologySignature` separate from a drawing signature that includes the geometric family; all focused topic/difficulty combinations are exercised against the rolling 20-item filter.
+13. **Leaving or repeating during a topic mini round could duplicate an abandoned exercise or retain an incompatible topic session.** History is now appended only for an exercise owned by the current phase; incompatible settings clear the topic, and repeating history returns to the workbench without restoring topic state or issuing rewards.
+14. **Several browser assertions encoded the wrong exam label or assumed a mobile component was already in the viewport.** The E2E helper now recognizes both delivery labels, scrolls the real SVG hitbox into view, and verifies ambiguity selection only when component centers are actually within the touch radius.
+15. **Launcher smoke tests reused a fixed directory under the repository.** Their scratch files now go in a unique temporary directory, leaving existing repository artifacts untouched.
 
 ## Verification evidence
 
 - `npm run lint`: passed.
-- `npm run build`: passed; production JS 280.70 kB (89.90 kB gzip), CSS 20.18 kB (5.12 kB gzip).
-- `npm run test:unit`: 110 tests passed across 10 files, including malformed session/exam recovery, real-diagonal geometry, conductor explanations, and configuration logging.
+- `npm run build`: passed; production JS 315.04 kB (99.55 kB gzip), CSS 30.03 kB (7.01 kB gzip).
+- `npm run test:unit`: 139 tests passed across 12 files, including exhaustive topology comparisons, malformed session/exam recovery, focused topic generation, and history/session transitions.
 - `npm run test:circuits`: passed; 245 unique basic and 283 unique advanced legacy signatures, 25 open-switch deletion cases.
-- `npm run test:stress`: 24,000 generated circuits and 388,396 post-reduction states checked across R/C, three levels, numeric/symbolic, equal/varied. Two reduction orders were compared against an independent evaluator. No geometry failures or fallback circuits; worst observed generation p95 was 1.13 ms (limit: 50 ms). The campaign recorded 5,644 diagonal cases in intermediate/advanced families.
-- `npm run test:e2e`: 55 passed, 22 intentionally skipped by project-specific scope across Chromium, Edge, WebKit, Pixel 7, iPhone 13, tablet, and mobile landscape. Added browser completion of all six R/C × difficulty combinations, a symbolic capacitor fraction, and dense-layout pixel measurements. Touch flows physically tap reductions and open-switch removal; no horizontal document overflow or runtime errors.
-- `npm run test:visual`: 7 passed, 9 skipped by project-specific coverage; desktop/tablet/iPhone portrait/landscape baselines and all six geometric families plus Chromium selection/error/equivalent/result/open-switch states were updated and reviewed. The family browser check also rejects visible label/label and label/symbol overlap.
-- `npm run test:a11y -- --workers=1 --reporter=line`: 3 passed, 3 project-specific skips; axe reported no serious or critical violations in its Chromium/WebKit initial-state checks.
-- `npm run test:lighthouse`: passed in the final QA run; performance 99, accessibility 100.
+- `npm run test:stress`: 24,000 generated circuits and 387,188 post-reduction states checked across R/C, three levels, numeric/symbolic, equal/varied. Two reduction orders were compared against an independent evaluator. No geometry failures or fallback circuits; per-matrix generation p95 ranged from 0.18 to 0.73 ms (limit: 50 ms). The campaign recorded integrated diagonals only in intermediate/advanced families.
+- `npm run test:e2e`: 76 passed, 22 intentionally skipped by project-specific scope across Chromium, Edge, WebKit, Pixel 7, iPhone 13, tablet, and mobile landscape. Browser flows cover all six R/C × difficulty combinations, topic progression and reload, symbolic capacitor fractions, exam delivery, verified replay/no-reward repeat, touch selection, and dense-layout measurements. No horizontal document overflow or runtime errors.
+- `npm run test:visual`: 8 passed, 12 skipped by project-specific coverage; desktop/tablet/iPhone portrait/landscape baselines matched, and the refreshed Chromium selection/error snapshots were visually inspected. The six geometric families and equivalent/result/open-switch states passed their snapshot and overlap checks.
+- `npm run test:a11y`: 5 passed, 3 project-specific skips; axe reported no serious or critical violations in its Chromium/WebKit checks.
+- `npm run test:lighthouse`: passed; performance 96, accessibility 100.
 - `npm run test:launcher`: passed for missing requirements, a project path containing spaces, occupied-port fallback, and process/port cleanup.
 - Firefox launch was attempted separately; Playwright failed before loading the application with `browserType.launch: spawn UNKNOWN` for the installed Firefox binary.
 
 ## Remaining limits
 
 - Firefox is not verified on this Windows host until its Playwright runtime launches successfully. This is an environment/browser startup failure, not an application assertion failure.
+- Finite automated testing cannot prove a literal universal “never” for every imaginable graph. Reductions therefore fail closed at runtime: the exercise/network is validated, a topology certificate is checked before arithmetic, and the resulting exercise and geometry are validated before state is committed. The separate exhaustive graph specification tested over 500,000 rule/selection cases for multigraphs up to five nodes and six components; the 24,000-circuit campaign independently checked 387,188 resulting states. This is strong evidence, not a formal proof over unbounded inputs.
 - Pixel/iPhone touch checks use Playwright's device emulation and touchscreen API; a physical-device pass remains useful before release.
 - On especially dense mobile landscape diagrams, not all IDs can fit at a legible size in the complete overview. Zoom and the synchronized list expose every component, and the drawing caption explains this tradeoff. This is intentional rather than allowing text collisions or sub-11-pixel labels.
 - Browser storage remains best-effort by design. When disabled or corrupt, the interface continues without durable session persistence and displays a warning.
