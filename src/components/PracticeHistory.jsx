@@ -1,4 +1,7 @@
 import { formatExact } from '../lib/values.js';
+import { useMemo, useState } from 'react';
+import TechnicalCircuit from './TechnicalCircuit.jsx';
+import { reconstructHistory } from '../lib/practiceReview.js';
 export function ReductionExplanation({ step, settings }) {
   if (!step) return null;
   if (step.rule === 'delete') return <p>Un interruptor abierto interrumpe la rama. Los componentes sin camino entre A y B dejan de contribuir.</p>;
@@ -18,7 +21,18 @@ export function ReductionExplanation({ step, settings }) {
 function AttemptList({ item }) {
   return <ol className="attempt-list">{item.attempts.map((attempt, index) => <li key={index}>{attempt.kind === 'reduction' ? <><span>{attempt.components.map(c => c.label).join(', ')} → {attempt.equivalent?.label || 'Rama eliminada'}</span><ReductionExplanation step={attempt} settings={item.settings} /></> : attempt.kind === 'error' ? <span className="error-text">{attempt.message}{attempt.answer ? ` Respuesta: ${attempt.answer}.` : ''}</span> : ({ undo: 'Deshacer', redo: 'Rehacer', hint: 'Pista consultada', configuration: 'Configuración cambiada' }[attempt.kind] || attempt.kind)}</li>)}</ol>;
 }
-export default function PracticeHistory({ history, exam }) {
+function ReviewReplay({ item }) {
+  const replay = useMemo(() => reconstructHistory(item), [item]);
+  const [step, setStep] = useState(0);
+  if (!replay.valid) return <p className="review-unavailable" role="status">No se puede reproducir este registro de forma segura. {replay.reason}</p>;
+  const frame = replay.frames[Math.min(step, replay.frames.length - 1)];
+  return <details className="review-replay"><summary>Recorrido gráfico paso a paso</summary><div className="review-stage">
+    <TechnicalCircuit key={`${item.id}-${step}`} exercise={frame.exercise} settings={frame.exercise.settings} selected={[]} onSelect={() => {}} onClear={() => {}} disabled />
+    <p className="review-caption" role="status">Paso {step} de {replay.frames.length - 1} · {frame.description}</p>
+    <div className="review-controls"><button onClick={() => setStep(value => Math.max(0, value - 1))} disabled={step === 0}>Anterior</button><input type="range" min="0" max={replay.frames.length - 1} value={step} aria-label="Paso de la revisión" onChange={event => setStep(Number(event.target.value))} /><button onClick={() => setStep(value => Math.min(replay.frames.length - 1, value + 1))} disabled={step === replay.frames.length - 1}>Siguiente</button></div>
+  </div></details>;
+}
+export default function PracticeHistory({ history, exam, onRepeat }) {
   const entries = exam?.status === 'finished' ? exam.results : history;
-  return <section className="history-section" aria-label="Historial de ejercicios"><h2>{exam?.status === 'finished' ? 'Revisión del parcial' : 'Historial'}</h2>{!entries.length && <p>Los ejercicios entregados y los cambios de práctica aparecerán acá.</p>}{[...entries].reverse().map((item, index) => <details key={`${item.id}-${index}`} className="history-entry"><summary><span>{item.settings?.compType === 'C' ? 'Capacitores' : item.settings ? 'Resistencias' : 'Pendiente'} · {item.status === 'complete' ? 'Entregado' : item.status === 'incomplete' ? 'Incompleto' : 'Práctica cambiada'}</span><span>{item.errors} errores · {item.steps} pasos · {item.undos} deshacer · {Math.round(item.elapsed / 1000)} s {item.reward ? `· +${item.reward.points} puntos` : ''}</span></summary>{item.settings && <><p className="muted">{item.family} · Semilla {item.seed}</p>{item.final?.edges.length === 1 && <p>Equivalente: {formatExact(item.final.edges[0].value, item.settings)}</p>}<AttemptList item={item} /></>}</details>)}</section>;
+  return <section className="history-section" aria-label="Historial de ejercicios"><h2>{exam?.status === 'finished' ? 'Revisión del parcial' : 'Historial'}</h2>{!entries.length && <p>Los ejercicios entregados y los cambios de práctica aparecerán acá.</p>}{[...entries].reverse().map((item, index) => <details key={`${item.id}-${index}`} className="history-entry"><summary><span>{item.settings?.compType === 'C' ? 'Capacitores' : item.settings ? 'Resistencias' : 'Pendiente'} · {item.repeat ? 'Repetición sin puntos' : item.status === 'complete' ? 'Entregado' : item.status === 'incomplete' ? 'Incompleto' : 'Práctica cambiada'}</span><span>{item.errors} errores · {item.steps} pasos · {item.undos} deshacer · {Math.round(item.elapsed / 1000)} s {item.reward ? `· +${item.reward.points} puntos` : ''}</span></summary>{item.settings && <><p className="muted">{item.family} · Semilla {item.seed}</p>{item.final?.edges.length === 1 && <p>Equivalente: {formatExact(item.final.edges[0].value, item.settings)}</p>}<AttemptList item={item} />{item.initial && item.final && <><ReviewReplay item={item} />{item.status === 'complete' && onRepeat && <button className="repeat-exercise" onClick={() => onRepeat(item)}>Repetir sin puntos</button>}</>}</>}</details>)}</section>;
 }

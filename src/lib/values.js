@@ -3,6 +3,14 @@ const gcd = (a, b) => b ? gcd(b, a % b) : abs(a);
 export const WIRE = Object.freeze({ kind: 'wire' });
 export const OPEN = Object.freeze({ kind: 'open' });
 
+export function isExactValue(value) {
+  if (value?.kind === 'wire' || value?.kind === 'open') return true;
+  if (value?.kind !== 'finite' || typeof value.n !== 'string' || typeof value.d !== 'string' || !/^(0|[1-9]\d{0,199})$/.test(value.n) || !/^[1-9]\d{0,199}$/.test(value.d)) return false;
+  const numerator = BigInt(value.n), denominator = BigInt(value.d);
+  const gcd = (a, b) => b === 0n ? a : gcd(b, a % b);
+  return gcd(numerator, denominator) === 1n;
+}
+
 // JSON-safe exact rationals. BigInt is confined to arithmetic, never persistence.
 export function rational(numerator, denominator = 1) {
   let n = BigInt(numerator), d = BigInt(denominator);
@@ -30,13 +38,22 @@ export function numericValue(value, type) {
   return Number(value.n) / Number(value.d);
 }
 export function combineValues(values, rule, type) {
+  if (!Array.isArray(values) || values.length < 2 || !['series', 'parallel'].includes(rule) || !['R', 'C'].includes(type) || values.some(value => !isExactValue(value))) {
+    throw new Error('La reducción requiere al menos dos valores exactos y una regla eléctrica válida.');
+  }
   const additive = (type === 'R') === (rule === 'series');
   const short = type === 'R' ? 'wire' : 'open';
   const infinite = type === 'R' ? 'open' : 'wire';
   const zero = value => value.kind === short || (value.kind === 'finite' && value.n === '0');
   if (additive) {
     if (values.some(value => value.kind === infinite)) return { kind: infinite };
-    return values.filter(value => value.kind === 'finite').reduce(add, rational(0));
+    const finite = values.filter(value => value.kind === 'finite');
+    if (!finite.length && type === 'R') return WIRE;
+    if (!finite.length && type === 'C') return OPEN;
+    const result = finite.reduce(add, rational(0));
+    if (type === 'R' && rule === 'series' && result.n === '0') return WIRE;
+    if (type === 'C' && rule === 'parallel' && result.n === '0') return OPEN;
+    return result;
   }
   if (values.some(zero)) return { kind: short };
   const finite = values.filter(value => value.kind === 'finite');

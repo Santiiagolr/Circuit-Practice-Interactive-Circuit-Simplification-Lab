@@ -41,5 +41,5 @@ test('fullscreen and result are named and the completed circuit remains reviewab
   await expect(result).toContainText('Equivalente');
   const audit = await new AxeBuilder({ page }).analyze();
   expect(audit.violations.filter(item => ['critical', 'serious'].includes(item.impact))).toEqual([]);
-  await expect(page.getByRole('button', { name: 'Entregar y continuar' })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Entregar resultado' })).toBeVisible();
 });

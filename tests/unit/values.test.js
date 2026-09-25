@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { rational, combineValues, numericValue, parseAnswer, answersMatch, WIRE, OPEN, formatExact } from '../../src/lib/values.js';
+import { rational, combineValues, isExactValue, numericValue, parseAnswer, answersMatch, WIRE, OPEN, formatExact } from '../../src/lib/values.js';
 import { oracleCombine, expectClose } from '../helpers/oracle.js';
 
 describe.each(['R', 'C'])('%s exact values', type => {
@@ -22,4 +22,11 @@ it('uses exact symbolic coefficients and three significant digit numeric roundin
   expect(answersMatch(rational(34, 100), rational(1, 3), { compType: 'R' })).toBe(false);
   expect(parseAnswer('∞', { compType: 'C' })).toEqual(WIRE);
   expect(formatExact(rational(3, 2), { representation: 'symbolic', compType: 'R' })).toBe('3/2R');
+});
+it('rejects malformed or non-canonical exact values before electrical arithmetic', () => {
+  expect(isExactValue({ kind: 'finite', n: '2', d: '4' })).toBe(false);
+  expect(isExactValue({ kind: 'finite', n: '01', d: '1' })).toBe(false);
+  expect(isExactValue({ kind: 'finite', n: '0', d: '2' })).toBe(false);
+  expect(() => combineValues([rational(2)], 'series', 'R')).toThrow();
+  expect(() => combineValues([rational(2), rational(4)], 'star', 'R')).toThrow();
 });

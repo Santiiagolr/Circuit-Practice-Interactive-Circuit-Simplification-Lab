@@ -1,10 +1,9 @@
-import { generateExercise, normalizeSettings, isComplete, prepareReduction, reduceExercise } from './exercise.js';
+import { generateExercise, normalizeSettings, isComplete, inspectExercise, prepareReduction, reduceExercise } from './exercise.js';
 import { normalizeProgress, calculateReward, applyReward, PROGRESS_KEY } from './gameState.js';
-import { parseAnswer, answersMatch } from './values.js';
-import { inspectDrawing } from './technicalDrawing.js';
+import { isExactValue, parseAnswer, answersMatch } from './values.js';
 
 export const SESSION_KEY = 'circuit-practice:session:v2';
-const currentExercise = (exercise, now) => ({ exercise, startedAt: now, selected: [], past: [], future: [], attempts: [], pending: null, notice: null, submitted: false });
+const currentExercise = (exercise, now, rewardEligible = true) => ({ exercise, startedAt: now, selected: [], past: [], future: [], attempts: [], pending: null, notice: null, submitted: false, rewardEligible });
 function spawn(state, seed, now) {
   const exercise = generateExercise(state.settings, seed, state.recent[state.settings.difficulty] || []);
   return { ...state, recent: { ...state.recent, [state.settings.difficulty]: [...(state.recent[state.settings.difficulty] || []), exercise.signature].slice(-20) }, current: currentExercise(exercise, now) };
@@ -24,13 +23,13 @@ function wrong(state, message, now, detail) {
 }
 function commit(state, ids, rule, now) {
   const result = reduceExercise(state.current.exercise, ids, rule);
-  if (!result.valid) return report(state, result.message, 'warning');
+  if (!result.valid) return report(state, result.message, result.status === 'fault' ? 'error' : 'warning');
   const next = record(state, { kind: 'reduction', rule, components: result.selected.map(edge => ({ id: edge.id, label: edge.label, value: edge.value })), equivalent: result.equivalent && { label: result.equivalent.label, value: result.equivalent.value } }, now);
   return { ...next, current: { ...next.current, exercise: result.exercise, past: [...next.current.past, state.current.exercise], future: [], selected: [], pending: null, notice: { kind: 'success', message: isComplete(result.exercise) ? 'Circuito reducido. Revisá el resultado y entregá cuando estés listo.' : rule === 'delete' ? 'Interruptor abierto eliminado; ramas desconectadas podadas.' : 'Reducción confirmada.' } } };
 }
 function resultRecord(state, now, status, reward = null) {
   const { exercise, attempts, startedAt } = state.current;
-  return { id: exercise.id, seed: exercise.seed, settings: exercise.settings, family: exercise.family, initial: state.current.past[0] || exercise, final: exercise, attempts, status, reward,
+  return { id: exercise.id, seed: exercise.seed, settings: exercise.settings, family: exercise.family, initial: state.current.past[0] || exercise, final: exercise, attempts, status, reward, repeat: !state.current.rewardEligible,
     steps: attempts.filter(item => item.kind === 'reduction').length, errors: attempts.filter(item => item.kind === 'error').length, undos: attempts.filter(item => item.kind === 'undo').length, elapsed: Math.max(0, now - startedAt) };
 }
 function expire(state, now) {
@@ -57,7 +56,9 @@ export function sessionReducer(state, action) {
     case 'reduce': {
       if (locked || current.pending || isComplete(current.exercise)) return state;
       const check = prepareReduction(current.exercise, current.selected, action.rule);
-      if (!check.valid) return check.kind === 'interface' ? report(state, check.message) : wrong(state, check.message, now, { rule: action.rule, ids: current.selected });
+      if (!check.valid) return check.status === 'invalid'
+        ? wrong(state, check.message, now, { rule: action.rule, ids: current.selected })
+        : report(state, check.message, check.status === 'fault' ? 'error' : 'warning');
       if (state.settings.manual && action.rule !== 'delete') return { ...state, current: { ...current, pending: { ids: [...current.selected], rule: action.rule, revision: current.exercise.revision, value: check.value }, notice: null } };
       return commit(state, current.selected, action.rule, now);
     }
@@ -73,8 +74,10 @@ export function sessionReducer(state, action) {
     case 'redo': {
       const undo = action.type === 'undo', list = undo ? current.past : current.future;
       if (locked || !list.length) return state;
+      const candidate = list.at(-1), integrity = inspectExercise(candidate);
+      if (!integrity.valid) return report(state, 'No se restauró el paso porque el circuito guardado no superó la verificación eléctrica y visual.', 'error');
       const next = record(state, { kind: action.type }, now);
-      return { ...next, current: { ...next.current, exercise: list.at(-1), past: undo ? current.past.slice(0, -1) : [...current.past, current.exercise], future: undo ? [...current.future, current.exercise] : current.future.slice(0, -1), selected: [], pending: null, notice: { kind: 'info', message: undo ? 'Paso deshecho. Los intentos y errores se conservan.' : 'Paso rehecho.' } } };
+      return { ...next, current: { ...next.current, exercise: candidate, past: undo ? current.past.slice(0, -1) : [...current.past, current.exercise], future: undo ? [...current.future, current.exercise] : current.future.slice(0, -1), selected: [], pending: null, notice: { kind: 'info', message: undo ? 'Paso deshecho. Los intentos y errores se conservan.' : 'Paso rehecho.' } } };
     }
     case 'hint': {
       if (locked || state.settings.mode !== 'training') return state;
@@ -86,14 +89,26 @@ export function sessionReducer(state, action) {
     case 'settings': {
       if (state.exam?.status === 'active') return state;
       const settings = normalizeSettings({ ...state.settings, ...action.settings });
-      const visualOnly = Object.keys(action.settings).every(key => ['flow', 'resistorStyle'].includes(key));
+      const visualOnly = Object.keys(action.settings).every(key => ['flow', 'resistorStyle', 'theme'].includes(key));
       if (visualOnly) return record({ ...state, settings }, { kind: 'configuration', settings: action.settings }, now);
       const recorded = record(state, { kind: 'configuration', settings: action.settings }, now);
-      return spawn({ ...recorded, settings, exam: null, history: [...state.history, resultRecord(recorded, now, 'abandoned')].slice(-200) }, seed, now);
+      return spawn({ ...recorded, settings, exam: null, history: (current.submitted ? state.history : [...state.history, resultRecord(recorded, now, 'abandoned')]).slice(-200) }, seed, now);
     }
     case 'new':
       if (state.exam?.status === 'active') return state;
-      return spawn({ ...state, history: [...state.history, resultRecord(state, now, 'abandoned')].slice(-200), exam: null }, seed, now);
+      return spawn({ ...state, history: (current.submitted ? state.history : [...state.history, resultRecord(state, now, 'abandoned')]).slice(-200), exam: null }, seed, now);
+    case 'next':
+      if (!current.submitted || state.settings.mode === 'exam') return state;
+      return spawn(state, seed, now);
+    case 'repeat': {
+      if (state.exam?.status === 'active' || !validHistoryItem(action.item) || !action.item.initial || !action.item.settings || !Number.isFinite(action.item.seed)) return state;
+      const settings = normalizeSettings({ ...action.item.settings, mode: 'training' });
+      const exercise = generateExercise(settings, action.item.seed, []);
+      exercise.id = `${action.item.id}:repeat:${state.history.length}:${now}`;
+      const recent = [...(state.recent[settings.difficulty] || []), exercise.signature].slice(-20);
+      const history = current.submitted ? state.history : [...state.history, resultRecord(state, now, 'abandoned')].slice(-200);
+      return { ...state, settings, exam: null, recent: { ...state.recent, [settings.difficulty]: recent }, current: currentExercise(exercise, now, false), history };
+    }
     case 'start-exam': {
       if (state.exam?.status === 'active') return state;
       return spawn({ ...state, settings: { ...state.settings, mode: 'exam' }, exam: { status: 'active', count: state.settings.examCount, startedAt: now, deadline: state.settings.examMinutes ? now + state.settings.examMinutes * 60000 : null, results: [] } }, seed, now);
@@ -104,21 +119,22 @@ export function sessionReducer(state, action) {
     }
     case 'submit': {
       if (locked || !isComplete(current.exercise)) return state;
-      const reward = calculateReward(state.progress, state.settings.difficulty, current.attempts.some(item => item.kind === 'error'));
+      const reward = current.rewardEligible === false ? null : calculateReward(state.progress, state.settings.difficulty, current.attempts.some(item => item.kind === 'error'));
       const item = resultRecord(state, now, 'complete', reward);
-      if (state.history.some(entry => entry.id === item.id && entry.status === 'complete')) return state;
-      const next = { ...state, progress: applyReward(state.progress, reward), history: [...state.history, item].slice(-200), current: { ...current, submitted: true, selected: [], pending: null } };
+      if (current.rewardEligible !== false && state.history.some(entry => entry.id === item.id && entry.status === 'complete' && !entry.repeat)) return state;
+      const next = { ...state, progress: reward ? applyReward(state.progress, reward) : state.progress, history: [...state.history, item].slice(-200), current: { ...current, submitted: true, selected: [], pending: null } };
       if (state.exam?.status === 'active') {
         next.exam = { ...state.exam, results: [...state.exam.results, item] };
         if (next.exam.results.length === next.exam.count) { next.exam.status = 'finished'; return next; }
+        return spawn(next, seed, now);
       }
-      return spawn(next, seed, now);
+      return next;
     }
     default: return state;
   }
 }
 function validStoredValue(value) {
-  return Boolean(value && (value.kind === 'wire' || value.kind === 'open' || (value.kind === 'finite' && /^\d{1,200}$/.test(value.n) && /^[1-9]\d{0,199}$/.test(value.d))));
+  return isExactValue(value);
 }
 function validExercise(exercise) {
   if (!exercise || !Array.isArray(exercise.edges) || !exercise.edges.length || exercise.edges.length > 30 || !Array.isArray(exercise.nodes) || exercise.nodes.length > 60 || !exercise.settings || !Array.isArray(exercise.buses) || !Array.isArray(exercise.sourceRoute) || exercise.sourceRoute.length < 2 || !exercise.bounds || !Number.isFinite(exercise.bounds.width) || !Number.isFinite(exercise.bounds.height) || exercise.bounds.width < 1 || exercise.bounds.height < 1 || !Number.isInteger(exercise.revision) || exercise.revision < 0) return false;
@@ -132,7 +148,7 @@ function validExercise(exercise) {
     if (!validStoredValue(edge.value)) return false;
     if (!nodeIds.has(edge.from) || !nodeIds.has(edge.to) || typeof edge.label !== 'string' || !Array.isArray(edge.route) || edge.route.length < 2 || edge.route.length > 100 || !edge.route.every(point => point && Number.isFinite(point.x) && Number.isFinite(point.y))) return false;
   }
-  return !inspectDrawing(exercise).length;
+  return inspectExercise(exercise).valid;
 }
 function validAttempt(item) {
   if (!item || typeof item !== 'object' || typeof item.kind !== 'string') return false;
@@ -145,7 +161,7 @@ function validHistoricalExercise(exercise) {
   return !exercise || Boolean(exercise && Array.isArray(exercise.edges) && exercise.edges.length > 0 && exercise.edges.length <= 30 && exercise.edges.every(edge => edge && validStoredValue(edge.value)));
 }
 function validHistoryItem(item) {
-  return Boolean(item && typeof item.id === 'string' && ['complete', 'incomplete', 'abandoned'].includes(item.status) && ['steps', 'errors', 'undos', 'elapsed'].every(key => Number.isFinite(item[key]) && item[key] >= 0) && Array.isArray(item.attempts) && item.attempts.length <= 1000 && item.attempts.every(validAttempt) && (item.settings == null || typeof item.settings === 'object') && validHistoricalExercise(item.initial) && validHistoricalExercise(item.final) && (item.reward == null || Number.isFinite(item.reward.points) && item.reward.points >= 0));
+  return Boolean(item && typeof item.id === 'string' && ['complete', 'incomplete', 'abandoned'].includes(item.status) && (item.repeat == null || typeof item.repeat === 'boolean') && ['steps', 'errors', 'undos', 'elapsed'].every(key => Number.isFinite(item[key]) && item[key] >= 0) && Array.isArray(item.attempts) && item.attempts.length <= 1000 && item.attempts.every(validAttempt) && (item.settings == null || typeof item.settings === 'object') && validHistoricalExercise(item.initial) && validHistoricalExercise(item.final) && (item.reward == null || Number.isFinite(item.reward.points) && item.reward.points >= 0));
 }
 function validSession(saved) {
   if (!saved || saved.version !== 2 || !validExercise(saved.current?.exercise)) return false;
@@ -154,6 +170,11 @@ function validSession(saved) {
   if (!Array.isArray(current.attempts) || current.attempts.length > 1000 || !current.attempts.every(validAttempt) || !Array.isArray(current.selected) || new Set(current.selected).size !== current.selected.length || current.selected.some(id => !edgeIds.has(id))) return false;
   if (!Number.isFinite(current.startedAt) || typeof current.submitted !== 'boolean' || current.notice != null && (typeof current.notice.message !== 'string' || typeof current.notice.kind !== 'string')) return false;
   if (current.pending != null && (!Array.isArray(current.pending.ids) || current.pending.ids.length < 2 || current.pending.ids.some(id => !edgeIds.has(id)) || !['series', 'parallel'].includes(current.pending.rule) || current.pending.revision !== current.exercise.revision || !validStoredValue(current.pending.value))) return false;
+  if (current.pending != null) {
+    if (!saved.settings?.manual) return false;
+    const verified = prepareReduction(current.exercise, current.pending.ids, current.pending.rule);
+    if (!verified.valid || JSON.stringify(verified.value) !== JSON.stringify(current.pending.value)) return false;
+  }
   if (!Array.isArray(saved.history) || saved.history.length > 200 || !saved.history.every(validHistoryItem) || !saved.recent || typeof saved.recent !== 'object' || Object.values(saved.recent).some(items => !Array.isArray(items) || items.length > 20 || items.some(signature => typeof signature !== 'string'))) return false;
   if (saved.exam == null) return true;
   const exam = saved.exam;
@@ -172,6 +193,7 @@ export function loadSession({ storage, qa, now = Date.now() } = {}) {
       if (matchesQa) {
         if (!validSession(saved)) throw new Error('Sesión dañada');
         saved.settings = normalizeSettings(saved.settings); saved.progress = normalizeProgress(saved.progress);
+        saved.current.rewardEligible ??= true;
         return { state: sessionReducer(saved, { type: 'tick', now }), warning };
       }
     }

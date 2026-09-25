@@ -18,6 +18,38 @@ test('opens the complete circuit at desktop and supports fit and fullscreen', as
   expect(errors).toEqual([]);
 });
 
+test('switches and remembers the laboratory light and dark themes', async ({ page }) => {
+  await page.goto('/?seed=120');
+  const app = page.locator('.practice-app');
+  await expect(app).toHaveAttribute('data-theme', 'light');
+  await page.getByRole('button', { name: 'Usar tema oscuro' }).click();
+  await expect(app).toHaveAttribute('data-theme', 'dark');
+  await page.reload();
+  await expect(app).toHaveAttribute('data-theme', 'dark');
+  await page.getByRole('button', { name: 'Usar tema claro' }).click();
+  await expect(app).toHaveAttribute('data-theme', 'light');
+});
+
+test('keeps a delivered circuit visible, replays its verified steps and allows a no-reward repeat', async ({ page }) => {
+  test.setTimeout(45_000);
+  await page.goto('/?seed=831&type=C&difficulty=guided');
+  await solveVisibleCircuit(page);
+  await page.getByRole('button', { name: 'Entregar resultado' }).click();
+  await expect(page.getByRole('region', { name: 'Circuito reducido' })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Siguiente ejercicio' })).toBeVisible();
+  const score = await page.getByTestId('score').textContent();
+  await page.getByRole('button', { name: 'Historial' }).click();
+  await page.getByText('Recorrido gráfico paso a paso').click();
+  await expect(page.getByText(/Paso 0 de/)).toBeVisible();
+  await page.getByRole('button', { name: 'Siguiente', exact: true }).click();
+  await expect(page.getByText(/Paso 1 de/)).toBeVisible();
+  await page.getByRole('button', { name: 'Repetir sin puntos' }).click();
+  await expect(page.getByTestId('score')).toHaveText(score);
+  await solveVisibleCircuit(page);
+  await page.getByRole('button', { name: 'Entregar resultado' }).click();
+  await expect(page.getByTestId('score')).toHaveText(score);
+});
+
 test('selects through a physical SVG click and the accessible component panel', async ({ page }) => {
   const errors = captureRuntimeErrors(page);
   await page.goto('/?seed=301&difficulty=guided&type=R');
@@ -92,7 +124,7 @@ test('physical touch controls complete an exercise on mobile without horizontal 
     const box = await button.boundingBox(); expect(box.width).toBeGreaterThanOrEqual(44); expect(box.height).toBeGreaterThanOrEqual(44);
   }
   await solveVisibleCircuit(page, true);
-  await page.getByRole('button', { name: 'Entregar y continuar' }).click();
+  await page.getByRole('button', { name: 'Entregar resultado' }).click();
   await expect(page.getByTestId('score')).toHaveText('10');
   expect(errors).toEqual([]);
 });
@@ -123,7 +155,7 @@ test('a three-question exam records one delivery and leaves a review', async ({ 
   await page.getByLabel('Ejercicios del parcial').selectOption('3');
   await page.getByRole('button', { name: 'Comenzar parcial' }).click();
   await solveVisibleCircuit(page);
-  await page.getByRole('button', { name: 'Entregar y continuar' }).click();
+  await page.getByRole('button', { name: 'Entregar resultado' }).click();
   await expect(page.getByTestId('score')).toHaveText('10');
   page.on('dialog', dialog => dialog.accept());
   await page.getByRole('button', { name: 'Finalizar parcial' }).click();
@@ -142,7 +174,7 @@ test('completes every component and difficulty combination through the visible c
     await solveVisibleCircuit(page);
     await expect(page.getByRole('region', { name: 'Circuito reducido' })).toBeVisible();
     await expectNoHorizontalDocumentOverflow(page);
-    await page.getByRole('button', { name: 'Entregar y continuar' }).click();
+    await page.getByRole('button', { name: 'Entregar resultado' }).click();
     await expect(page.getByTestId('score')).not.toHaveText('0');
     await page.evaluate(() => document.fonts.ready);
   }

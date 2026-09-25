@@ -4,6 +4,7 @@ import { PROGRESS_KEY } from '../../src/lib/gameState.js';
 import { isComplete, prepareReduction } from '../../src/lib/exercise.js';
 import { nextMove } from '../helpers/manualMoves.js';
 import { parseQaConfig } from '../../src/lib/qaConfig.js';
+import { reconstructHistory } from '../../src/lib/practiceReview.js';
 const act = (s, type, extra = {}) => sessionReducer(s, { type, now: 1000, ...extra });
 function move(state) {
   const next = nextMove(state.current.exercise, false, true);
@@ -19,7 +20,12 @@ it('keeps rewards independent of grouping size and awards only on delivery once'
   s = act(s, 'undo'); expect(isComplete(s.current.exercise)).toBe(false);
   s = act(s, 'redo'); expect(s.current.exercise).toEqual(first);
   s = act(s, 'submit'); expect(s.progress).toMatchObject({ score: 10, completed: 1, streak: 1 });
+  expect(s.current.exercise).toBe(first);
+  expect(s.current.submitted).toBe(true);
   expect(act(s, 'submit').progress).toEqual(s.progress);
+  s = act(s, 'next');
+  expect(s.current.exercise.id).not.toBe(first.id);
+  expect(s.current.submitted).toBe(false);
 });
 it('undo keeps mistakes, hints and attempts, and a new branch clears redo', () => {
   let s = createSession({ seed: 7, progress: { streak: 3, bestStreak: 4 }, now: 0 });
@@ -58,6 +64,37 @@ it('records appearance changes without resetting the exercise or streak', () => 
   expect(s.current.exercise).toBe(exercise);
   expect(s.current.attempts.at(-1)).toMatchObject({ kind: 'configuration', settings: { resistorStyle: 'rectangle' } });
   expect(s.progress.streak).toBe(3);
+});
+it('persists the dark theme as a visual-only preference', () => {
+  let s = createSession({ seed: 11, progress: { streak: 2 }, now: 0 });
+  const exercise = s.current.exercise;
+  s = act(s, 'settings', { settings: { theme: 'dark' } });
+  expect(s.current.exercise).toBe(exercise);
+  expect(s.settings.theme).toBe('dark');
+  expect(s.progress.streak).toBe(2);
+  const db = storage(); saveSession(s, db);
+  expect(loadSession({ storage: db, now: 20 }).state.settings.theme).toBe('dark');
+});
+it('repeats a delivered exercise without issuing additional points and reconstructs its manual history', () => {
+  let s = createSession({ seed: 998, now: 0 });
+  const initial = s.current.exercise;
+  s = move(s);
+  s = act(s, 'undo');
+  s = move(s);
+  while (!isComplete(s.current.exercise)) s = move(s);
+  s = act(s, 'submit');
+  const item = s.history.at(-1), replay = reconstructHistory(item);
+  expect(replay.valid).toBe(true);
+  expect(replay.frames.length).toBeGreaterThan(2);
+  expect(replay.frames.at(-1).exercise.edges).toEqual(item.final.edges);
+  const score = s.progress.score; let repeated = act(s, 'repeat', { item });
+  expect(repeated.current.exercise.signature).toBe(initial.signature);
+  expect(repeated.current.rewardEligible).toBe(false);
+  while (!isComplete(repeated.current.exercise)) repeated = move(repeated);
+  const finished = act(repeated, 'submit');
+  expect(finished.progress.score).toBe(score);
+  expect(finished.history.at(-1).repeat).toBe(true);
+  expect(reconstructHistory({ ...item, attempts: [{ ...item.attempts.find(attempt => attempt.kind === 'reduction'), components: [{ id: 'missing', label: 'R', value: { kind: 'finite', n: '1', d: '1' } }] }] }).valid).toBe(false);
 });
 it('restores the full session and exact wire/open tags, migrates old progress', () => {
   const db = storage(); db.setItem(PROGRESS_KEY, JSON.stringify({ score: 75, streak: 3, bestStreak: 7, completed: 8 }));
@@ -108,6 +145,21 @@ it('rejects a malformed persisted exam shape without discarding saved score', ()
   expect(recovered.warning).toBeTruthy();
   expect(recovered.state.exam).toBeNull();
   expect(recovered.state.progress.score).toBe(21);
+});
+it('rejects a saved manual answer that disagrees with its selected topology', () => {
+  const db = storage();
+  let state = createSession({ seed: 378, settings: { manual: true }, now: 0 });
+  const move = nextMove(state.current.exercise);
+  for (const id of move.ids) state = act(state, 'select', { id });
+  state = act(state, 'reduce', { rule: move.rule });
+  expect(state.current.pending).toBeTruthy();
+  saveSession(state, db);
+  const corrupted = JSON.parse(db.getItem(SESSION_KEY));
+  corrupted.current.pending.value = { kind: 'finite', n: '999', d: '1' };
+  db.setItem(SESSION_KEY, JSON.stringify(corrupted));
+  const restored = loadSession({ storage: db, now: 10 });
+  expect(restored.warning).toBeTruthy();
+  expect(restored.state.current.pending).toBeNull();
 });
 it('freezes exam config, expires on reload and marks all pending exercises incomplete', () => {
   let s = createSession({ seed: 0, settings: { mode: 'exam', examMinutes: 15, examCount: 3 }, now: 0 });

@@ -31,8 +31,9 @@ describe('graph topology validation', () => {
 
   it('only accepts exact parallel endpoints', () => {
     const edges = [edge('e1', 'A', 'B', 10), edge('e2', 'B', 'A', 20), edge('e3', 'A', 'N1', 30)];
-    expect(validateGraphSelection(nodes, edges, ['e1', 'e2'], 'parallel').valid).toBe(true);
-    expect(validateGraphSelection(nodes, edges, ['e1', 'e3'], 'parallel').valid).toBe(false);
+    const connectedNodes = nodes.filter(node => ['A', 'B', 'N1'].includes(node.id));
+    expect(validateGraphSelection(connectedNodes, edges, ['e1', 'e2'], 'parallel').valid).toBe(true);
+    expect(validateGraphSelection(connectedNodes, edges, ['e1', 'e3'], 'parallel').valid).toBe(false);
   });
 
   it('rejects stale IDs, branches and chains through a terminal', () => {

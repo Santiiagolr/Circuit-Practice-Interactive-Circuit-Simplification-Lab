@@ -1,6 +1,6 @@
 import { createSeededRandom } from './circuit.js';
-import { astToNetwork, validateTopology } from './topology.js';
-import { combineValues, numericValue, rational, multiply, UNIT_FACTORS, WIRE, OPEN } from './values.js';
+import { astToNetwork, inspectTopologyNetwork, validateTopology, verifyTopologyCertificate } from './topology.js';
+import { combineValues, isExactValue, numericValue, rational, multiply, UNIT_FACTORS, WIRE, OPEN } from './values.js';
 import { layoutNetwork, routeBetweenPorts, inspectDrawing } from './technicalDrawing.js';
 
 export const LEVELS = {
@@ -13,10 +13,11 @@ export const DEFAULT_SETTINGS = Object.freeze({
   mode: 'training', difficulty: 'guided', compType: 'R', valueMode: 'varied',
   representation: 'numeric', resistorStyle: 'zigzag', manual: false,
   flow: false, rUnit: 'Ω', cUnit: 'µF', examCount: 5, examMinutes: 0,
+  theme: 'light',
 });
 export function normalizeSettings(value = {}) {
   const next = { ...DEFAULT_SETTINGS };
-  const choices = { mode: ['training', 'exam'], difficulty: Object.keys(LEVELS), compType: ['R', 'C'], valueMode: ['varied', 'equal'], representation: ['numeric', 'symbolic'], resistorStyle: ['zigzag', 'rectangle'], rUnit: ['Ω', 'kΩ'], cUnit: ['µF', 'nF'], examCount: [3, 5, 10], examMinutes: [0, 15, 30, 60] };
+  const choices = { mode: ['training', 'exam'], difficulty: Object.keys(LEVELS), compType: ['R', 'C'], valueMode: ['varied', 'equal'], representation: ['numeric', 'symbolic'], resistorStyle: ['zigzag', 'rectangle'], rUnit: ['Ω', 'kΩ'], cUnit: ['µF', 'nF'], examCount: [3, 5, 10], examMinutes: [0, 15, 30, 60], theme: ['light', 'dark'] };
   for (const [key, options] of Object.entries(choices)) if (options.includes(value[key])) next[key] = value[key];
   for (const key of ['manual', 'flow']) if (typeof value[key] === 'boolean') next[key] = value[key];
   return next;
@@ -33,6 +34,57 @@ export function evaluateExactTree(node, type) {
   return node.type === 'leaf' ? node.value : combineValues(node.children.map(child => evaluateExactTree(child, type)), node.type, type);
 }
 export function treeDepth(node) { return node.type === 'leaf' ? 0 : 1 + Math.max(...node.children.map(treeDepth)); }
+
+function exerciseFault(code, message) {
+  return { valid: false, status: 'fault', kind: 'fault', code, message };
+}
+
+/** Validate the electrical contract and its diagram before any state transition. */
+export function inspectExercise(exercise) {
+  if (!exercise || !exercise.settings || !['R', 'C'].includes(exercise.settings.compType)) return exerciseFault('invalid-exercise-settings', 'El ejercicio no declara un tipo eléctrico compatible.');
+  const topology = inspectTopologyNetwork(exercise.nodes, exercise.edges);
+  if (!topology.valid) return { ...topology, kind: 'fault' };
+  if (!Array.isArray(exercise.buses) || exercise.buses.length !== exercise.nodes.length || !Array.isArray(exercise.sourceRoute) || exercise.sourceRoute.length < 2 || !exercise.bounds || !Number.isFinite(exercise.bounds.width) || !Number.isFinite(exercise.bounds.height) || exercise.bounds.width <= 0 || exercise.bounds.height <= 0 || exercise.nodes.some(node => !Number.isFinite(node.x) || !Number.isFinite(node.y))) {
+    return exerciseFault('invalid-exercise-geometry', 'El circuito no contiene una geometría completa.');
+  }
+  const busIds = new Set();
+  for (const bus of exercise.buses) {
+    const coordinate = bus?.axis === 'x' ? bus.y : bus?.axis === 'y' ? bus.x : NaN;
+    if (!bus || !topology.nodeById.has(bus.id) || busIds.has(bus.id) || !Number.isFinite(coordinate)) return exerciseFault('invalid-node-bus', 'Un nodo no tiene una guía geométrica única y válida.');
+    busIds.add(bus.id);
+  }
+  for (const edge of exercise.edges) {
+    if (!isExactValue(edge.value)) return exerciseFault('invalid-component-value', `El valor de ${edge.label || edge.id} no es una cantidad exacta válida.`);
+    if (edge.compType === 'S') {
+      const expected = edge.switchState === 'open' ? OPEN.kind : edge.switchState === 'closed' ? WIRE.kind : null;
+      if (!expected || edge.value.kind !== expected) return exerciseFault('switch-state-value-mismatch', `El estado y el valor del interruptor ${edge.label || edge.id} no coinciden.`);
+    } else if (edge.compType === 'W') {
+      if (edge.value.kind !== 'wire' && !(exercise.settings.compType === 'R' && edge.equivalent && edge.value.kind === 'finite' && edge.value.n === '0')) {
+        return exerciseFault('wire-value-mismatch', `El valor del cable ${edge.label || edge.id} no representa un conductor ideal.`);
+      }
+    } else if (edge.compType !== exercise.settings.compType) {
+      return exerciseFault('mixed-component-types', `El componente ${edge.label || edge.id} no corresponde al tipo de este ejercicio.`);
+    } else if (edge.value.kind === 'finite') {
+      if (edge.value.n === '0' && !(edge.equivalent && exercise.settings.compType === 'C')) return exerciseFault('zero-passive-component', `${edge.label || edge.id} tiene un valor físico nulo.`);
+      if (edge.value.n === '0' && exercise.settings.compType === 'C' && !edge.equivalent) return exerciseFault('zero-passive-component', `${edge.label || edge.id} tiene una capacitancia física nula.`);
+    } else if (!(edge.equivalent && edge.value.kind === 'open')) {
+      return exerciseFault('passive-component-special-value', `${edge.label || edge.id} usa un estado reservado para conductores o interruptores.`);
+    }
+    const expectedNumeric = numericValue(edge.value, exercise.settings.compType);
+    if (edge.val !== undefined && !Object.is(edge.val, expectedNumeric)) return exerciseFault('inconsistent-numeric-cache', `El valor numérico de ${edge.label || edge.id} no coincide con su valor exacto.`);
+    if (!Array.isArray(edge.route) || edge.route.length < 2 || edge.route.length > 100 || !edge.route.every(point => point && Number.isFinite(point.x) && Number.isFinite(point.y))) {
+      return exerciseFault('invalid-component-route', `La ruta de ${edge.label || edge.id} no es válida.`);
+    }
+  }
+  if (!exercise.sourceRoute.every(point => point && Number.isFinite(point.x) && Number.isFinite(point.y))) return exerciseFault('invalid-source-route', 'La batería no está conectada mediante una ruta válida.');
+  try {
+    const geometryIssues = inspectDrawing(exercise);
+    if (geometryIssues.length) return { ...exerciseFault('invalid-drawing', 'El dibujo no representa una red geométrica segura.'), issues: geometryIssues };
+  } catch {
+    return exerciseFault('invalid-drawing', 'No se pudo comprobar que el dibujo coincida con el circuito.');
+  }
+  return { valid: true, status: 'valid', code: 'valid-exercise' };
+}
 
 export function generateExercise(input = DEFAULT_SETTINGS, seed = Date.now(), recent = []) {
   const settings = normalizeSettings(input), level = LEVELS[settings.difficulty];
@@ -125,15 +177,26 @@ function prune(nodes, edges) {
 }
 const reversed = route => [...route].reverse();
 export function prepareReduction(exercise, ids, rule) {
+  const integrity = inspectExercise(exercise);
+  if (!integrity.valid) return integrity;
+  if (!Array.isArray(ids)) return { valid: false, status: 'interface', kind: 'interface', code: 'invalid-selection-shape', message: 'Volvé a seleccionar los componentes del circuito.' };
   if (rule === 'delete') {
     const edge = exercise.edges.find(item => item.id === ids[0]);
     return ids.length === 1 && edge?.compType === 'S' && edge.switchState === 'open'
-      ? { valid: true, value: OPEN, selected: [edge] }
-      : { valid: false, kind: 'interface', message: 'Seleccioná un interruptor abierto para eliminarlo.' };
+      ? { valid: true, status: 'valid', code: 'remove-open-switch', value: OPEN, selected: [edge] }
+      : { valid: false, status: 'interface', kind: 'interface', code: 'open-switch-selection-required', message: 'Seleccioná un interruptor abierto para eliminarlo.' };
   }
   const result = validateTopology(exercise.nodes, exercise.edges, ids, rule);
   if (!result.valid) return result;
   const selected = result.orderedEdges;
+  const verified = verifyTopologyCertificate(exercise.nodes, exercise.edges, ids, rule, result.certificate);
+  if (!verified.valid) return { ...verified, kind: 'fault' };
+  if (selected.some(edge => edge.compType !== exercise.settings.compType && edge.compType !== 'W' && edge.compType !== 'S')) {
+    return exerciseFault('mixed-component-types', 'La selección mezcla magnitudes que no se pueden combinar en este ejercicio.');
+  }
+  if (selected.some(edge => edge.compType === 'S' && edge.switchState === 'open')) {
+    return { valid: false, status: 'prerequisite', kind: 'prerequisite', code: 'open-switch-first', message: 'Eliminá primero el interruptor abierto; esa rama no conduce.' };
+  }
   return { ...result, selected, value: combineValues(selected.map(edge => edge.value), rule, exercise.settings.compType) };
 }
 export function reduceExercise(exercise, ids, rule) {
@@ -162,9 +225,10 @@ export function reduceExercise(exercise, ids, rule) {
       origin: { rule, components: selected.map(edge => ({ id: edge.id, label: edge.label, value: edge.value, origin: edge.origin })) } };
     edges.push(equivalent);
   }
-  const next = { ...exercise, nodes, edges, revision: exercise.revision + 1, nextEquivalent: exercise.nextEquivalent + (equivalent ? 1 : 0) };
-  const issues = inspectDrawing(next);
-  if (issues.length) return { valid: false, kind: 'interface', message: 'No se pudo ubicar el equivalente sin superposiciones. Se conservó el circuito.', issues, exercise };
+  const liveNodeIds = new Set(nodes.map(node => node.id));
+  const next = { ...exercise, nodes, edges, buses: exercise.buses.filter(bus => liveNodeIds.has(bus.id)), revision: exercise.revision + 1, nextEquivalent: exercise.nextEquivalent + (equivalent ? 1 : 0) };
+  const integrity = inspectExercise(next);
+  if (!integrity.valid) return { ...integrity, exercise };
   return { valid: true, exercise: next, equivalent, selected: check.selected, rule };
 }
 export function isComplete(exercise) {

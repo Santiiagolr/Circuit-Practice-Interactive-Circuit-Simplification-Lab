@@ -12,3 +12,25 @@
 @media(max-height:500px) and (min-width:601px){.workbench{overflow:clip}.action-bar{position:sticky;top:0;z-index:8}.desk-content{min-height:300px;height:75dvh}.desk-fullscreen .desk-content{min-height:130px}.desk-fullscreen .desk-header{padding:6px 12px}.desk-fullscreen .action-bar{padding:5px 12px}.desk-fullscreen .view-tools{padding:3px 8px}.desk-fullscreen .drawing-caption{min-height:20px;padding:2px 8px 4px}.desk-fullscreen .feedback-strip{font-size:12px;min-height:30px;padding:6px 12px}.desk-fullscreen .exercise-heading p{display:none}.desk-fullscreen .step-explanation{max-height:100px;overflow:auto}}
 @media(prefers-reduced-motion:reduce){*,*::before,*::after{animation:none!important;transition:none!important;scroll-behavior:auto!important}.current-flow{display:none}}
 @media(max-width:600px){.component-value{display:block}}
+.header-actions{display:flex;align-items:center;gap:8px}.header-actions button{display:flex;align-items:center;justify-content:center;gap:7px}
+.practice-app[data-theme="dark"]{--paper:#17212B;--ink:#E7EEF4;--wire:#91A2B3;--select:#34C7B4;--equivalent:#F2B85D;--error:#FF887A;--line:#344454;--muted:#AAB8C5;min-height:100dvh;background:#10171F;color:var(--ink)}
+.practice-app[data-theme="dark"] .settings-grid,.practice-app[data-theme="dark"] .workbench,.practice-app[data-theme="dark"] .history-section{border-color:var(--line);background:var(--paper)}
+.practice-app[data-theme="dark"] input,.practice-app[data-theme="dark"] select{background:#10171F;border-color:#637486;color:var(--ink)}
+.practice-app[data-theme="dark"] .action-bar,.practice-app[data-theme="dark"] .feedback-strip{background:#1D2935;border-color:var(--line)}
+.practice-app[data-theme="dark"] .drawing-area{background-color:var(--paper);background-image:radial-gradient(#435363 .65px,transparent .65px)}
+.practice-app[data-theme="dark"] .view-tools button{background:#17212BEE}
+.practice-app[data-theme="dark"] .component-option[aria-pressed=true]{background:#173B3A;color:#72D8C8}
+.practice-app[data-theme="dark"] .component-option[aria-pressed=true] .component-check{background:var(--select);color:#102522}
+.practice-app[data-theme="dark"] .component-hitbox{fill:transparent}
+.practice-app[data-theme="dark"] .circuit-component.selected .component-hitbox,.practice-app[data-theme="dark"] .circuit-component:hover .component-hitbox{fill:#34C7B414}
+.practice-app[data-theme="dark"] .feedback-strip.error{background:#3C2324;color:#FFAAA0}
+.practice-app[data-theme="dark"] .feedback-strip.success{color:#72D8C8}
+.practice-app[data-theme="dark"] .result-strip{background:#332B1E;border-color:#79633C}
+.practice-app[data-theme="dark"] .arithmetic-entry{background:#1B3433;border-color:var(--select)}
+.practice-app[data-theme="dark"] .exam-summary{background:var(--paper)}
+.practice-app[data-theme="dark"] .storage-warning{background:#332B1E;color:#F4E2BD}
+.practice-app[data-theme="dark"] .candidate-picker{background:var(--paper);border-color:var(--select)}
+@media(max-width:600px){.header-actions{gap:5px}.header-actions button{padding:8px 10px;font-size:12px}}
+.review-replay{margin:10px 0;border-top:1px solid var(--line)}.review-stage{margin:8px 0 14px;padding:10px;border:1px solid var(--line);border-radius:8px;background:color-mix(in srgb,var(--paper) 92%,var(--wire))}.review-stage .drawing-area{height:clamp(230px,36vw,380px);min-height:230px;max-height:380px;border:1px solid var(--line);border-radius:6px}.review-stage .view-tools{display:none}.review-caption{font-size:13px;margin:8px 0}.review-controls{display:flex;align-items:center;gap:10px}.review-controls input{flex:1;min-height:30px;padding:0;accent-color:var(--select)}.repeat-exercise{margin:0 0 12px}.review-unavailable{padding:10px;border-left:3px solid var(--equivalent);background:#FFF8E9}
+.practice-app[data-theme="dark"] .review-stage{background:#121B23}.practice-app[data-theme="dark"] .review-unavailable{background:#332B1E;color:#F4E2BD}
+@media(max-width:600px){.review-stage{padding:6px}.review-stage .drawing-area{height:250px;min-height:220px}.review-controls button{padding:8px 10px;font-size:12px}}
