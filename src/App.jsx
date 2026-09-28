@@ -120,6 +120,7 @@ export default function App() {
   useLayoutEffect(() => {
     const theme = settings.theme === 'dark' ? 'dark' : 'light';
     document.documentElement.dataset.theme = theme;
+    document.documentElement.style.colorScheme = theme;
     document.querySelector('meta[name="theme-color"]')?.setAttribute('content', theme === 'dark' ? '#0B1422' : '#F3F7FC');
   }, [settings.theme]);
   return <main className="practice-app" data-theme={settings.theme}>

@@ -7,12 +7,26 @@
     <meta name="theme-color" content="#F3F7FC" />
     <meta name="description" content="Laboratorio interactivo para simplificar circuitos eléctricos." />
     <title>Circuitos en equilibrio · Laboratorio</title>
+    <style>
+      html,
+      body {
+        min-height: 100%;
+        background-color: #F3F7FC;
+      }
+      html[data-theme="dark"],
+      html[data-theme="dark"] body {
+        background-color: #0B1422;
+      }
+    </style>
     <script>
       try {
         const savedSession = JSON.parse(localStorage.getItem('circuit-practice:session:v2') || 'null');
-        document.documentElement.dataset.theme = savedSession?.settings?.theme === 'dark' ? 'dark' : 'light';
+        const theme = savedSession?.settings?.theme === 'dark' ? 'dark' : 'light';
+        document.documentElement.dataset.theme = theme;
+        document.documentElement.style.colorScheme = theme;
       } catch {
         document.documentElement.dataset.theme = 'light';
+        document.documentElement.style.colorScheme = 'light';
       }
     </script>
   </head>

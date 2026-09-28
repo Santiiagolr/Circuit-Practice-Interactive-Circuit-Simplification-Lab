@@ -24,10 +24,53 @@ test('switches and remembers the laboratory light and dark themes', async ({ pag
   await expect(app).toHaveAttribute('data-theme', 'light');
   await page.getByRole('button', { name: 'Usar tema oscuro' }).click();
   await expect(app).toHaveAttribute('data-theme', 'dark');
+  await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark');
+  const darkSurface = await page.evaluate(() => ({
+    backgrounds: ['html', 'body', '#root', '.practice-app'].map(selector => getComputedStyle(document.querySelector(selector)).backgroundColor),
+    colorScheme: getComputedStyle(document.documentElement).colorScheme,
+    themeColor: document.querySelector('meta[name="theme-color"]').content,
+  }));
+  expect(darkSurface.backgrounds).toEqual(Array(4).fill('rgb(11, 20, 34)'));
+  expect(darkSurface.colorScheme).toBe('dark');
+  expect(darkSurface.themeColor).toBe('#0B1422');
   await page.reload();
   await expect(app).toHaveAttribute('data-theme', 'dark');
+  await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark');
+  for (const width of [1920, 2560]) {
+    await page.setViewportSize({ width, height: width === 1920 ? 1080 : 1440 });
+    const geometry = await page.evaluate(() => ({
+      documentWidth: document.documentElement.clientWidth,
+      scrollWidth: document.documentElement.scrollWidth,
+      appWidth: document.querySelector('.practice-app').getBoundingClientRect().width,
+      backgrounds: ['html', 'body', '#root', '.practice-app'].map(selector => getComputedStyle(document.querySelector(selector)).backgroundColor),
+    }));
+    expect(geometry.scrollWidth).toBeLessThanOrEqual(geometry.documentWidth);
+    expect(geometry.appWidth).toBe(geometry.documentWidth);
+    expect(geometry.backgrounds).toEqual(Array(4).fill('rgb(11, 20, 34)'));
+  }
+  await page.getByRole('button', { name: 'Por temas' }).click();
+  await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark');
+  await page.getByRole('button', { name: 'Progreso' }).click();
+  await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark');
   await page.getByRole('button', { name: 'Usar tema claro' }).click();
   await expect(app).toHaveAttribute('data-theme', 'light');
+  const lightSurface = await page.evaluate(() => ({
+    background: getComputedStyle(document.documentElement).backgroundColor,
+    colorScheme: getComputedStyle(document.documentElement).colorScheme,
+    themeColor: document.querySelector('meta[name="theme-color"]').content,
+  }));
+  expect(lightSurface.background).toBe('rgb(243, 247, 252)');
+  expect(lightSurface.colorScheme).toBe('light');
+  expect(lightSurface.themeColor).toBe('#F3F7FC');
+});
+
+test('the workbench guidance follows selection and manual reduction state', async ({ page }) => {
+  await page.goto('/?seed=120&difficulty=guided&type=R&values=equal');
+  await expect(page.locator('.feedback-strip')).toContainText('Seleccioná dos o más componentes');
+  await page.locator('[data-component-id]').first().click();
+  await expect(page.locator('.feedback-strip.selection')).toContainText('Elegí al menos otro componente');
+  await page.locator('[data-component-id]').nth(1).click();
+  await expect(page.locator('.feedback-strip.selection')).toContainText('Compará las conexiones');
 });
 
 test('keeps a delivered circuit visible, replays its verified steps and allows a no-reward repeat', async ({ page }) => {

@@ -8,6 +8,9 @@ test('initial exercise and keyboard controls have no serious accessibility viola
   await page.goto('/?seed=91&difficulty=practice&type=R');
   const results = await new AxeBuilder({ page }).analyze();
   expect(results.violations.filter(item => ['critical', 'serious'].includes(item.impact))).toEqual([]);
+  await page.getByRole('button', { name: 'Usar tema oscuro' }).click();
+  const darkResults = await new AxeBuilder({ page }).analyze();
+  expect(darkResults.violations.filter(item => ['critical', 'serious'].includes(item.impact))).toEqual([]);
   await expectNoHorizontalDocumentOverflow(page);
   await expect(page.locator('[data-component-id]').first()).toHaveAttribute('tabindex', '0');
   expect(errors).toEqual([]);

@@ -8,6 +8,17 @@ test('responsive full-circuit overview baseline', async ({ page }, testInfo) => 
   await expect(page.locator('.workbench')).toHaveScreenshot(`workbench-${testInfo.project.name}.png`, { animations: 'disabled', maxDiffPixelRatio: 0.002 });
 });
 
+test('light and dark themes cover the complete ultrawide application shell', async ({ page }, testInfo) => {
+  test.skip(testInfo.project.name !== 'chromium');
+  await page.setViewportSize({ width: 2560, height: 1440 });
+  await page.goto('/?seed=2026&difficulty=guided&type=C');
+  await page.evaluate(() => document.fonts.ready);
+  await expect(page).toHaveScreenshot('app-light-ultrawide.png', { fullPage: true, animations: 'disabled', maxDiffPixelRatio: 0.002 });
+  await page.getByRole('button', { name: 'Usar tema oscuro' }).click();
+  await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark');
+  await expect(page).toHaveScreenshot('app-dark-ultrawide.png', { fullPage: true, animations: 'disabled', maxDiffPixelRatio: 0.002 });
+});
+
 test('topic overview and focused mini exercise remain readable', async ({ page }, testInfo) => {
   test.skip(testInfo.project.name !== 'chromium');
   await page.goto('/?seed=829&type=C');

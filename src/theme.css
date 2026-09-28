@@ -34,8 +34,6 @@
   --radius-card: 16px;
   --radius-control: 10px;
 
-  /* Existing SVG and component rules consume these aliases. */
-  --paper: var(--paper);
 }
 
 :root[data-theme="dark"] {
@@ -80,6 +78,16 @@ body,
   background: var(--page);
 }
 
+:root[data-theme="light"],
+:root[data-theme="dark"] {
+  background-color: var(--page);
+}
+
+:root[data-theme] body,
+:root[data-theme] #root {
+  background-color: var(--page);
+}
+
 html {
   scrollbar-color: var(--scroll-thumb) var(--page);
   scrollbar-width: thin;
@@ -87,7 +95,6 @@ html {
 
 body {
   color: var(--ink);
-  transition: background-color 160ms ease, color 160ms ease;
 }
 
 button,
@@ -108,12 +115,26 @@ button:active:not(:disabled) {
   transform: translateY(1px);
 }
 
+button:disabled {
+  opacity: 1;
+  border-color: var(--line);
+  background: var(--surface-subtle);
+  color: var(--muted);
+}
+
 button.primary {
   color: var(--accent-ink);
 }
 
 button.primary:hover:not(:disabled) {
   background: color-mix(in srgb, var(--select) 86%, var(--ink));
+}
+
+.practice-app button.primary:disabled {
+  border-color: var(--line);
+  background: var(--surface-subtle);
+  color: var(--muted);
+  box-shadow: none;
 }
 
 button:focus-visible,
@@ -701,6 +722,47 @@ html[data-theme="dark"] .practice-app[data-theme="dark"] .topic-next-circuit {
 .practice-footer {
   gap: 8px 18px;
   color: var(--muted);
+}
+
+.fatal-error {
+  display: grid;
+  min-height: 100dvh;
+  place-items: center;
+  padding: 24px;
+  color: var(--ink);
+  background: var(--page);
+}
+
+.fatal-error__card {
+  display: grid;
+  width: min(100%, 560px);
+  gap: 14px;
+  padding: clamp(22px, 5vw, 40px);
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  background: var(--paper);
+  box-shadow: var(--shadow);
+}
+
+.fatal-error__card > svg {
+  color: var(--error);
+}
+
+.fatal-error__card > p:not(.eyebrow) {
+  color: var(--muted);
+}
+
+.fatal-error .button--primary {
+  justify-self: start;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 16px;
+  border: 1px solid var(--select);
+  border-radius: var(--radius-control);
+  background: var(--select);
+  color: var(--accent-ink);
+  font-weight: 700;
 }
 
 @media (min-width: 1600px) {
