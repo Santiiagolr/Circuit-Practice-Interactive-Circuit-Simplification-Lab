@@ -119,9 +119,20 @@ export default function App() {
   };
   useLayoutEffect(() => {
     const theme = settings.theme === 'dark' ? 'dark' : 'light';
-    document.documentElement.dataset.theme = theme;
-    document.documentElement.style.colorScheme = theme;
+    const root = document.documentElement;
+    root.classList.add('theme-colors-instant');
+    root.dataset.theme = theme;
+    root.style.colorScheme = theme;
     document.querySelector('meta[name="theme-color"]')?.setAttribute('content', theme === 'dark' ? '#0B1422' : '#F3F7FC');
+    let secondFrame = 0;
+    const firstFrame = requestAnimationFrame(() => {
+      secondFrame = requestAnimationFrame(() => root.classList.remove('theme-colors-instant'));
+    });
+    return () => {
+      cancelAnimationFrame(firstFrame);
+      cancelAnimationFrame(secondFrame);
+      root.classList.remove('theme-colors-instant');
+    };
   }, [settings.theme]);
   return <main className="practice-app" data-theme={settings.theme}>
     <header className="app-header"><div className="app-identity"><svg viewBox="0 0 44 28" aria-hidden="true"><path d="M 1 14 H 10 L 14 5 L 20 23 L 26 5 L 32 23 L 36 14 H 43" /></svg><div><h1>Circuit Practice</h1><p>Práctica de parciales</p></div></div><div className="header-actions"><button aria-pressed={settings.theme === 'dark'} aria-label={settings.theme === 'dark' ? 'Usar tema claro' : 'Usar tema oscuro'} onClick={() => dispatch({ type: 'settings', settings: { theme: settings.theme === 'dark' ? 'light' : 'dark' } })}>{settings.theme === 'dark' ? <Sun size={17} aria-hidden="true" /> : <Moon size={17} aria-hidden="true" />}<span>{settings.theme === 'dark' ? 'Claro' : 'Oscuro'}</span></button><button aria-expanded={showHistory} onClick={() => setShowHistory(value => !value)}>{showHistory ? 'Cerrar historial' : 'Historial'}</button></div></header>

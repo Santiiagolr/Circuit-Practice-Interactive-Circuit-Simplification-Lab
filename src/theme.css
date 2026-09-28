@@ -88,6 +88,12 @@ body,
   background-color: var(--page);
 }
 
+:root.theme-colors-instant *,
+:root.theme-colors-instant *::before,
+:root.theme-colors-instant *::after {
+  transition: none !important;
+}
+
 html {
   scrollbar-color: var(--scroll-thumb) var(--page);
   scrollbar-width: thin;
@@ -249,6 +255,7 @@ html[data-theme="dark"] .practice-app[data-theme="dark"] {
   border: 0;
   border-radius: 10px;
   color: var(--muted);
+  transition: none;
 }
 
 .app-nav button[aria-current="page"] {
