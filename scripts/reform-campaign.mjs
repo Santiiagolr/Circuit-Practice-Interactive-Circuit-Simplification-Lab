@@ -7,8 +7,10 @@ import { reduceAll } from '../tests/helpers/manualMoves.js';
 
 const seeds = Number(process.env.STRESS_SEEDS || 1000);
 assert.ok(Number.isInteger(seeds) && seeds > 0);
+const compTypes = process.env.STRESS_COMP_TYPES?.split(',').map(type => type.trim()).filter(Boolean) ?? ['R', 'C', 'L'];
+assert.ok(compTypes.length > 0 && compTypes.every(type => ['R', 'C', 'L'].includes(type)));
 const results = []; let reductions = 0;
-for (const compType of ['R', 'C']) for (const difficulty of Object.keys(LEVELS)) for (const representation of ['numeric', 'symbolic']) for (const valueMode of ['equal', 'varied']) {
+for (const compType of compTypes) for (const difficulty of Object.keys(LEVELS)) for (const representation of ['numeric', 'symbolic']) for (const valueMode of ['equal', 'varied']) {
   const times = [], signatures = new Set(), recent = [], families = new Set(); let fallback = 0, special = 0, diagonal = 0;
   for (let seed = 0; seed < seeds; seed++) {
     const start = performance.now(), exercise = generateExercise({ compType, difficulty, representation, valueMode }, seed, recent);
@@ -35,5 +37,6 @@ for (const compType of ['R', 'C']) for (const difficulty of Object.keys(LEVELS))
   assert.ok(result.p95ms < 50, 'Generation p95 exceeds 50ms');
 }
 mkdirSync('test-results', { recursive: true });
-writeFileSync('test-results/reform-campaign.json', JSON.stringify({ generated: seeds * 24, checkedStates: reductions, results }, null, 2));
-console.log(`Validated ${seeds * 24} circuits, ${reductions} states, two different reduction orders each.`);
+const generated = seeds * compTypes.length * Object.keys(LEVELS).length * 4;
+writeFileSync('test-results/reform-campaign.json', JSON.stringify({ generated, checkedStates: reductions, results }, null, 2));
+console.log(`Validated ${generated} circuits, ${reductions} states, two different reduction orders each.`);

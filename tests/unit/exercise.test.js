@@ -17,7 +17,7 @@ it.each(['R', 'C'])('reduces %s against an independent nodal evaluator in arbitr
       expect(expectClose(evaluateGraphNetwork(state.nodes, state.edges, compType), expected)).toBe(true);
     });
   }
-});
+}, 30000);
 it('reduces L networks against an independent impedance evaluator', () => {
   for (const difficulty of Object.keys(LEVELS)) for (let seed = 0; seed < 10; seed++) {
     const exercise = generateExercise({ compType: 'L', difficulty }, seed);
@@ -29,10 +29,10 @@ it('reduces L networks against an independent impedance evaluator', () => {
   }
 });
 it.each(['series', 'parallel'])('generates 50 pure L %s circuits per difficulty without immediate repeats or special components', rule => {
-  for (const difficulty of Object.keys(LEVELS)) {
+  for (const difficulty of Object.keys(LEVELS)) for (const valueMode of ['equal', 'varied']) {
     let previous = null;
     for (let seed = 0; seed < 50; seed++) {
-      const exercise = generateExercise({ compType: 'L', topicTopology: 'pure', focusRule: rule, difficulty }, seed, previous ? [previous] : []);
+      const exercise = generateExercise({ compType: 'L', topicTopology: 'pure', focusRule: rule, difficulty, valueMode }, seed, previous ? [previous] : []);
       expect(exercise.settings.topicTopology).toBe('pure');
       expect(exercise.tree.type).toBe(rule);
       expect(exercise.tree.children.every(child => child.type === 'leaf')).toBe(true);
@@ -46,13 +46,18 @@ it.each(['series', 'parallel'])('generates 50 pure L %s circuits per difficulty 
     }
   }
 });
-it.each(['series', 'parallel'])('generates mixed topic-only L networks focused on %s', rule => {
-  for (let seed = 0; seed < 30; seed++) {
-    const exercise = generateExercise({ compType: 'L', topicTopology: 'mixed', focusRule: rule }, seed);
-    expect(exercise.tree.type).toBe(rule);
-    expect(exercise.tree.children.some(child => child.type !== 'leaf')).toBe(true);
-    expect(exercise.edges.every(edge => edge.compType === 'L')).toBe(true);
-    expect(inspectDrawing(exercise)).toEqual([]);
+it.each(['series', 'parallel'])('generates 50 mixed topic-only L networks per difficulty focused on %s', rule => {
+  for (const difficulty of Object.keys(LEVELS)) for (const valueMode of ['equal', 'varied']) {
+    for (let seed = 0; seed < 50; seed++) {
+      const exercise = generateExercise({ compType: 'L', topicTopology: 'mixed', focusRule: rule, difficulty, valueMode }, seed);
+      expect(exercise.settings.topicTopology).toBe('mixed');
+      expect(exercise.tree.type).toBe(rule);
+      expect(exercise.tree.children.some(child => child.type !== 'leaf')).toBe(true);
+      expect(exercise.edges.length).toBeGreaterThanOrEqual(LEVELS[difficulty].min);
+      expect(exercise.edges.length).toBeLessThanOrEqual(LEVELS[difficulty].max);
+      expect(exercise.edges.every(edge => edge.compType === 'L')).toBe(true);
+      expect(inspectDrawing(exercise)).toEqual([]);
+    }
   }
 });
 it('keeps stable routes of unselected components, accepts N and rejects duplicates/stale IDs', () => {

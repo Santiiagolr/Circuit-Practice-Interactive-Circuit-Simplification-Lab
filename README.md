@@ -122,7 +122,7 @@ Reproducible query parameters are accepted only when Vite's `qa` mode is explici
 ?seed=2026&mode=training&type=C&difficulty=challenge&values=equal&representation=symbolic&manual=true
 ```
 
-Supported values are `training|exam`, `R|C`, `guided|practice|challenge`, and `varied|equal`; `representation` accepts `numeric|symbolic`. A matching QA URL restores the saved session after reload; changing its explicit seed/config starts a fresh reproducible exercise. To update approved screenshots intentionally, run:
+Supported values are `training|exam`, `R|C|L`, `guided|practice|challenge`, and `varied|equal`; `representation` accepts `numeric|symbolic`. A matching QA URL restores the saved session after reload; changing its explicit seed/config starts a fresh reproducible exercise. To update approved screenshots intentionally, run:
 
 ```bash
 npm run test:visual -- --update-snapshots
@@ -219,9 +219,10 @@ El desafío termina cuando la red se reduce manualmente a un único componente e
 - **Entrenamiento** y simulacros configurables (3, 5 o 10 ejercicios, con reloj opcional).
 - Seis familias geométricas: marcos rectangulares, escaleras, celdas apiladas, travesaños, celdas triangulares y diagonales integradas.
 - Circuitos aleatorios con semilla; la validez eléctrica y geométrica se comprueba antes de mostrarlos.
-- Soporte para resistencias, capacitores, cables, cortocircuitos, interruptores abiertos o cerrados y batería.
-- Reglas físicas específicas para resistencias y capacitores.
-- Valores numéricos en Ω/kΩ y µF/nF, o múltiplos simbólicos exactos de `R`/`C`.
+- Soporte para resistencias, capacitores, inductores ideales sin acoplamiento, cables, interruptores y batería.
+- Reglas físicas de resistencia y capacitancia, y equivalentes de inductancia ideal sin simulación temporal.
+- Valores numéricos en Ω/kΩ, µF/nF y H/mH/µH, o múltiplos simbólicos exactos de `R`/`C`/`L`.
+- Temas de inductores con elección manual entre conexiones puras y redes mixtas, y dos símbolos SVG seleccionables.
 - Ingreso opcional del equivalente con analizador restringido (fracciones, coma decimal, notación científica y unidades; nunca evalúa código).
 - Detección de cortocircuitos y poda visual de ramas muertas después de eliminar interruptores abiertos.
 - Interacción manual: el estudiante debe seleccionar, razonar y ejecutar cada operación.
@@ -294,10 +295,11 @@ npm run test:visual -- --update-snapshots
 
 ### Cómo se juega
 
-1. Elegí Entrenamiento o Simulacro, una dificultad y resistencias o capacitores.
-2. Seleccioná dos o más componentes reducibles; la lista y el dibujo permanecen sincronizados.
-3. Indicá si están en serie o en paralelo. `Q` y `E` aplican esas reglas.
-4. Si aparece un interruptor abierto, seleccionalo y usá **Eliminar (abierto)**.
+1. Elegí Entrenamiento o Simulacro, una dificultad y resistencias, capacitores o inductores.
+2. En **Por temas**, elegí serie o paralelo. Los recorridos de inductores empiezan con conexiones puras y permiten cambiar a redes mixtas cuando quieras.
+3. Seleccioná dos o más componentes reducibles; la lista y el dibujo permanecen sincronizados.
+4. Indicá si están en serie o en paralelo. `Q` y `E` aplican esas reglas.
+5. Si aparece un interruptor abierto, seleccionalo y usá **Eliminar (abierto)**.
 5. En Entrenamiento podés pedir una pista y revisar la fórmula después de reducir. En el parcial, la revisión queda disponible al entregar.
 6. Continuá hasta dejar un equivalente y entregá el ejercicio para registrar los puntos.
 

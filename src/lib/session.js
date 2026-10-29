@@ -171,7 +171,7 @@ export function sessionReducer(state, action) {
     case 'repeat': {
       if (state.exam?.status === 'active' || !validHistoryItem(action.item) || !action.item.initial || !action.item.settings || !Number.isFinite(action.item.seed)) return state;
       const exerciseSettings = normalizeSettings({ ...action.item.settings, mode: 'training' });
-      const settings = normalizeSettings({ ...exerciseSettings, focusRule: null });
+      const settings = normalizeSettings({ ...exerciseSettings, focusRule: null, topicTopology: null });
       const exercise = generateExercise(exerciseSettings, action.item.seed, []);
       exercise.id = `${action.item.id}:repeat:${state.history.length}:${now}`;
       const pureInductor = exerciseSettings.compType === 'L' && exerciseSettings.topicTopology === 'pure';

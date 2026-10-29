@@ -52,6 +52,39 @@ it('migrates saved R/C topic progress without losing its counts', () => {
   expect(loaded.topicProgress['R-series']).toMatchObject({ minis: 2, miniCorrect: 1, circuits: 3 });
   expect(loaded.topicProgress['L-series']).toEqual({ minis: 0, miniCorrect: 0, miniErrors: 0, circuits: 0, circuitErrors: 0 });
 });
+it('changes the inductor symbol without discarding a manual answer in progress', () => {
+  let s = createSession({ seed: 33, now: 0, settings: { compType: 'L', manual: true } });
+  const next = nextMove(s.current.exercise);
+  for (const id of next.ids) s = act(s, 'select', { id });
+  s = act(s, 'reduce', { rule: next.rule });
+  expect(s.current.pending).not.toBe(null);
+  const pending = s.current.pending, exercise = s.current.exercise, selected = [...s.current.selected];
+  s = act(s, 'settings', { settings: { inductorStyle: 'copper' } });
+  expect(s.current.pending).toBe(pending);
+  expect(s.current.exercise).toBe(exercise);
+  expect(s.current.selected).toEqual(selected);
+});
+it('repeats a pure L topic circuit without forcing the next free circuit into topic mode', () => {
+  let s = act(createSession({ seed: 12, now: 0 }), 'start-topic', { topicId: 'L-parallel' });
+  for (let index = 0; index < 2; index++) {
+    const mini = createMiniExercise('L-parallel', s.topicSession.seed, s.topicSession.miniIndex, s.settings);
+    s = act(s, 'topic-answer', { answer: mini.answer });
+    s = act(s, 'continue-topic');
+  }
+  s = complete(s);
+  s = act(s, 'submit');
+  const delivered = s.history.at(-1);
+  expect(delivered.settings).toMatchObject({ compType: 'L', topicTopology: 'pure' });
+  s = act(s, 'repeat', { item: delivered });
+  expect(s.settings.topicTopology).toBe(null);
+  expect(s.current.exercise.settings.topicTopology).toBe('pure');
+  s = complete(s);
+  s = act(s, 'submit');
+  expect(s.progress.completed).toBe(1);
+  s = act(s, 'next');
+  expect(s.settings.topicTopology).toBe(null);
+  expect(s.current.exercise.settings.topicTopology).toBe(null);
+});
 it('keeps rewards independent of grouping size and awards only on delivery once', () => {
   let s = complete(createSession({ seed: 817, now: 0 }));
   expect(s.progress.score).toBe(0);
