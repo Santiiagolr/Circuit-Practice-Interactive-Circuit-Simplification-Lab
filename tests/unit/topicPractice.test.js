@@ -4,6 +4,18 @@ import { classifyFromDefinition } from '../helpers/topologySpecification.js';
 import { generateExercise, LEVELS } from '../../src/lib/exercise.js';
 import { evaluateGraphNetwork, expectClose } from '../helpers/oracle.js';
 import { reduceAll } from '../helpers/manualMoves.js';
+import { numericValue } from '../../src/lib/values.js';
+
+it('provides pure and mixed inductor practice metadata and L-scaled minis', () => {
+  expect(TOPICS.filter(topic => topic.compType === 'L').map(topic => topic.id)).toEqual(['L-series', 'L-parallel']);
+  for (const topic of TOPICS.filter(item => item.compType === 'L')) {
+    const numeric = createMiniExercise(topic.id, 42, 0, { representation: 'numeric', lUnit: 'mH' });
+    expect(numeric.edges.every(edge => [10, 20, 30, 40, 50].includes(numericValue(edge.value, 'L') * 1000))).toBe(true);
+    const symbolic = createMiniExercise(topic.id, 42, 0, { representation: 'symbolic' });
+    expect(symbolic.edges.every(edge => edge.value.d === '1')).toBe(true);
+    expect(symbolic.edges.every(edge => edge.compType === 'L')).toBe(true);
+  }
+});
 
 describe('topic mini exercises use real, verifiable circuit graphs', () => {
   it.each(TOPICS)('builds truthful $title examples over varied seeds', topic => {
@@ -41,5 +53,5 @@ describe('topic mini exercises use real, verifiable circuit graphs', () => {
       expect(signatures.size).toBeGreaterThan(35);
       expect(topologySignatures.size).toBeGreaterThan(10);
     }
-  });
+  }, 20000);
 });

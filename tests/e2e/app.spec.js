@@ -18,6 +18,40 @@ test('opens the complete circuit at desktop and supports fit and fullscreen', as
   expect(errors).toEqual([]);
 });
 
+test('practices ideal inductors with selectable symbols and a persistent mixed-topic cycle', async ({ page }) => {
+  const errors = captureRuntimeErrors(page);
+  await page.goto('/?seed=824&type=L&difficulty=guided&values=equal');
+  const initialInductors = page.locator('.circuit-component[data-component-type="L"]');
+  expect(await initialInductors.count()).toBeGreaterThanOrEqual(4);
+  expect(await initialInductors.count()).toBeLessThanOrEqual(6);
+  await expect(page.locator('.exercise-heading p')).toContainText('Inductores ideales sin acoplamiento');
+  await page.getByText('Configurar práctica').click();
+  await page.getByLabel('Estilo de inductor').selectOption('copper');
+  await expect(page.locator('.circuit-component[data-component-type="L"]').first()).toHaveAttribute('data-inductor-style', 'copper');
+
+  await page.getByRole('button', { name: 'Por temas' }).click();
+  await page.getByRole('button', { name: 'Empezar tema' }).nth(4).click();
+  await expect(page.getByLabel('Recorrido de inductores')).toHaveValue('pure');
+  await page.getByLabel('Recorrido de inductores').selectOption('mixed');
+  await page.reload();
+  await expect(page.getByLabel('Recorrido de inductores')).toHaveValue('mixed');
+  await expect(page.getByLabel('Estilo de inductor')).toHaveValue('copper');
+
+  await page.getByRole('button', { name: 'Sí, cumplen la regla' }).click();
+  await page.getByRole('button', { name: 'Siguiente mini ejercicio' }).click();
+  await page.getByRole('button', { name: 'Sí, cumplen la regla' }).click();
+  await page.getByRole('button', { name: 'Continuar al circuito completo' }).click();
+  const inductors = page.locator('.circuit-component[data-component-type="L"]');
+  expect(await inductors.count()).toBeGreaterThanOrEqual(4);
+  expect(await inductors.count()).toBeLessThanOrEqual(6);
+  expect(await inductors.evaluateAll(edges => {
+    const degree = new Map();
+    for (const edge of edges) for (const node of [edge.dataset.from, edge.dataset.to]) degree.set(node, (degree.get(node) || 0) + 1);
+    return [...degree.values()].some(count => count > 2);
+  })).toBe(true);
+  expect(errors).toEqual([]);
+});
+
 test('switches and remembers the laboratory light and dark themes', async ({ page }) => {
   await page.goto('/?seed=120');
   const app = page.locator('.practice-app');

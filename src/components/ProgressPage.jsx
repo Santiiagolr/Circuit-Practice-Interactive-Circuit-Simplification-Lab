@@ -13,7 +13,7 @@ export default function ProgressPage({ progress, topicProgress = {}, history = [
       const freeSteps = freeCircuits.reduce((total, item) => total + item.attempts.filter(attempt => attempt.kind === 'reduction' && attempt.rule === topic.rule).length, 0);
       const minis = stats.minis || 0, correct = stats.miniCorrect || 0;
       const circuits = stats.circuits || 0;
-      return <article className="progress-topic" key={topic.id}><h3>{topic.title}</h3><progress max={Math.max(1, minis)} value={correct} aria-label={`${topic.title}: ${correct} minis correctos de ${minis}`} /><p>{minis ? `${correct} de ${minis} mini ejercicios correctos` : 'Todavía no hay mini ejercicios registrados'} · {circuits} {circuits === 1 ? 'circuito' : 'circuitos'} del tema · {freeSteps} reducciones del mismo tipo en práctica libre · {(stats.miniErrors || 0) + (stats.circuitErrors || 0)} errores del tema</p></article>;
+      return <article className="progress-topic" key={topic.id}><h3>{topic.title}</h3><progress max={Math.max(1, minis)} value={correct} aria-label={`${topic.title}: ${correct} minis correctos de ${minis}`} /><p>{minis ? `${correct} de ${minis} mini ejercicios correctos` : 'Todavía no hay mini ejercicios registrados'} · {circuits} {circuits === 1 ? 'circuito' : 'circuitos'} del tema · {freeSteps} reducciones del mismo tipo en práctica libre · {(stats.miniErrors || 0) + (stats.circuitErrors || 0)} errores del tema</p>{topic.compType === 'L' && <p>La actividad Puras/Mixtas se conserva en el historial de cada circuito.</p>}</article>;
     })}</div>
   </section>;
 }

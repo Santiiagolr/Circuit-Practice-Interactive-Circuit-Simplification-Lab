@@ -1,9 +1,12 @@
 import { formatExact } from '../lib/values.js';
+import InductorSymbol from './InductorSymbol.jsx';
 
 function Element({ edge, x, y, settings, muted = false }) {
   const capacitor = edge.compType === 'C';
   return <g className={`mini-element ${muted ? 'is-muted' : 'is-target'}`} aria-label={`${edge.label}, ${formatExact(edge.value, settings)}`}>
-    {capacitor
+    {edge.compType === 'L'
+      ? <g className={`inductor-symbol ${settings.inductorStyle === 'copper' ? 'inductor-mini-copper' : ''}`} transform={`translate(${x} ${y}) scale(1.9)`}><InductorSymbol style={settings.inductorStyle} /></g>
+      : capacitor
       ? <><path d={`M ${x - 42} ${y} H ${x - 8} M ${x + 8} ${y} H ${x + 42}`} /><path d={`M ${x - 8} ${y - 16} V ${y + 16} M ${x + 8} ${y - 16} V ${y + 16}`} /></>
       : <path d={`M ${x - 42} ${y} H ${x - 25} L ${x - 17} ${y - 11} L ${x - 7} ${y + 11} L ${x + 3} ${y - 11} L ${x + 13} ${y + 11} L ${x + 23} ${y - 11} L ${x + 25} ${y} H ${x + 42}`} />}
     <text x={x} y={y - 23} textAnchor="middle" className="mini-label">{edge.label}</text>

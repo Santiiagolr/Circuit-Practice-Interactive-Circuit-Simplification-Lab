@@ -1,12 +1,14 @@
 import { createSeededRandom } from './circuit.js';
 import { validateTopology } from './topology.js';
-import { rational } from './values.js';
+import { multiply, rational, unitForType, UNIT_FACTORS } from './values.js';
 
 export const TOPICS = Object.freeze([
   { id: 'R-series', compType: 'R', rule: 'series', title: 'Resistencias en serie', shortTitle: 'R · Serie' },
   { id: 'R-parallel', compType: 'R', rule: 'parallel', title: 'Resistencias en paralelo', shortTitle: 'R · Paralelo' },
   { id: 'C-series', compType: 'C', rule: 'series', title: 'Capacitores en serie', shortTitle: 'C · Serie' },
   { id: 'C-parallel', compType: 'C', rule: 'parallel', title: 'Capacitores en paralelo', shortTitle: 'C · Paralelo' },
+  { id: 'L-series', compType: 'L', rule: 'series', title: 'Inductores en serie', shortTitle: 'L · Serie' },
+  { id: 'L-parallel', compType: 'L', rule: 'parallel', title: 'Inductores en paralelo', shortTitle: 'L · Paralelo' },
 ]);
 export const createTopicProgress = () => Object.fromEntries(TOPICS.map(topic => [topic.id, { minis: 0, miniCorrect: 0, miniErrors: 0, circuits: 0, circuitErrors: 0 }]));
 
@@ -17,7 +19,9 @@ export function validateTopicProgress(value) {
       && counts.miniCorrect <= counts.minis));
 }
 
-const componentValue = (type, number) => type === 'R' ? rational(number) : rational(number, 1_000_000);
+const componentValue = (type, number, settings) => settings.representation === 'symbolic'
+  ? rational(number)
+  : multiply(rational(number), UNIT_FACTORS[unitForType({ ...settings, compType: type })][1]);
 
 export function createMiniExercise(topicId, seed, index = 0, settings = {}) {
   const topic = TOPICS.find(item => item.id === topicId);
@@ -26,7 +30,7 @@ export function createMiniExercise(topicId, seed, index = 0, settings = {}) {
   const targetIsValid = random() >= 0.38;
   const values = [10 + Math.floor(random() * 5) * 10, 10 + Math.floor(random() * 5) * 10, 10 + Math.floor(random() * 5) * 10];
   const label = n => `${topic.compType}${n}`;
-  const component = (id, from, to, valueIndex) => ({ id, from, to, label: label(valueIndex + 1), compType: topic.compType, value: componentValue(topic.compType, values[valueIndex]) });
+  const component = (id, from, to, valueIndex) => ({ id, from, to, label: label(valueIndex + 1), compType: topic.compType, value: componentValue(topic.compType, values[valueIndex], settings) });
   const nodes = [{ id: 'A', terminal: true }, { id: 'B', terminal: true }];
   let edges, layout;
   if (topic.rule === 'series' && !targetIsValid) {

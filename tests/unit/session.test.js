@@ -5,7 +5,7 @@ import { isComplete, prepareReduction } from '../../src/lib/exercise.js';
 import { nextMove } from '../helpers/manualMoves.js';
 import { parseQaConfig } from '../../src/lib/qaConfig.js';
 import { reconstructHistory } from '../../src/lib/practiceReview.js';
-import { createMiniExercise } from '../../src/lib/topicPractice.js';
+import { createMiniExercise, TOPICS } from '../../src/lib/topicPractice.js';
 const act = (s, type, extra = {}) => sessionReducer(s, { type, now: 1000, ...extra });
 function move(state) {
   const next = nextMove(state.current.exercise, false, true);
@@ -14,6 +14,44 @@ function move(state) {
 }
 function complete(state) { while (!isComplete(state.current.exercise)) state = move(state); return state; }
 const storage = () => { const data = new Map(); return { getItem: key => data.get(key) || null, setItem: (key, value) => data.set(key, value) }; };
+it('starts L topics pure, switches to mixed without skipping minis, and restores the selected mode', () => {
+  let s = act(createSession({ seed: 21, now: 0 }), 'start-topic', { topicId: 'L-series' });
+  expect(s.settings.topicTopology).toBe('pure');
+  for (let index = 0; index < 2; index++) {
+    const mini = createMiniExercise('L-series', s.topicSession.seed, s.topicSession.miniIndex, s.settings);
+    s = act(s, 'topic-answer', { answer: mini.answer });
+    s = act(s, 'continue-topic');
+  }
+  expect(s.topicSession.phase).toBe('circuit');
+  expect(s.current.exercise.edges.every(edge => edge.compType === 'L')).toBe(true);
+  expect(s.current.exercise.tree.children.every(child => child.type === 'leaf')).toBe(true);
+  const abandonedBefore = s.history.filter(item => item.status === 'abandoned').length;
+  s = act(s, 'settings', { settings: { topicTopology: 'mixed' } });
+  expect(s.settings.topicTopology).toBe('mixed');
+  expect(s.topicSession).toMatchObject({ phase: 'mini', miniIndex: 0, minisInCycle: 0, answered: false });
+  expect(s.history.filter(item => item.status === 'abandoned')).toHaveLength(abandonedBefore + 1);
+  const selectedId = s.current.exercise.edges[0].id;
+  s = act(s, 'select', { id: selectedId });
+  const exerciseBeforeStyleChange = s.current.exercise;
+  s = act(s, 'settings', { settings: { inductorStyle: 'copper' } });
+  expect(s.topicSession.phase).toBe('mini');
+  expect(s.current.selected).toEqual([selectedId]);
+  expect(s.current.exercise).toBe(exerciseBeforeStyleChange);
+  const saved = storage(); saveSession(s, saved);
+  const loaded = loadSession({ storage: saved, now: 2000 }).state;
+  expect(loaded.settings).toMatchObject({ topicTopology: 'mixed', inductorStyle: 'copper', lUnit: 'mH' });
+  expect(loaded.topicSession).toMatchObject({ topicId: 'L-series', phase: 'mini', miniIndex: 0 });
+  expect(loaded.topicProgress['L-series'].minis).toBe(2);
+});
+it('migrates saved R/C topic progress without losing its counts', () => {
+  const saved = storage();
+  let s = createSession({ seed: 5, now: 0 });
+  s.topicProgress = Object.fromEntries(TOPICS.filter(topic => topic.compType !== 'L').map(topic => [topic.id, { minis: 2, miniCorrect: 1, miniErrors: 1, circuits: 3, circuitErrors: 0 }]));
+  saveSession(s, saved);
+  const loaded = loadSession({ storage: saved, now: 1000 }).state;
+  expect(loaded.topicProgress['R-series']).toMatchObject({ minis: 2, miniCorrect: 1, circuits: 3 });
+  expect(loaded.topicProgress['L-series']).toEqual({ minis: 0, miniCorrect: 0, miniErrors: 0, circuits: 0, circuitErrors: 0 });
+});
 it('keeps rewards independent of grouping size and awards only on delivery once', () => {
   let s = complete(createSession({ seed: 817, now: 0 }));
   expect(s.progress.score).toBe(0);

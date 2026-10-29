@@ -33,26 +33,25 @@ export const multiply = (a, b) => rational(BigInt(a.n) * BigInt(b.n), BigInt(a.d
 export const add = (a, b) => rational(BigInt(a.n) * BigInt(b.d) + BigInt(b.n) * BigInt(a.d), BigInt(a.d) * BigInt(b.d));
 export const invert = a => rational(a.d, a.n);
 export function numericValue(value, type) {
-  if (value.kind === 'wire') return type === 'R' ? 0 : Infinity;
-  if (value.kind === 'open') return type === 'R' ? Infinity : 0;
+  if (value.kind === 'wire') return type === 'C' ? Infinity : 0;
+  if (value.kind === 'open') return type === 'C' ? 0 : Infinity;
   return Number(value.n) / Number(value.d);
 }
 export function combineValues(values, rule, type) {
-  if (!Array.isArray(values) || values.length < 2 || !['series', 'parallel'].includes(rule) || !['R', 'C'].includes(type) || values.some(value => !isExactValue(value))) {
+  if (!Array.isArray(values) || values.length < 2 || !['series', 'parallel'].includes(rule) || !['R', 'C', 'L'].includes(type) || values.some(value => !isExactValue(value))) {
     throw new Error('La reducción requiere al menos dos valores exactos y una regla eléctrica válida.');
   }
-  const additive = (type === 'R') === (rule === 'series');
-  const short = type === 'R' ? 'wire' : 'open';
-  const infinite = type === 'R' ? 'open' : 'wire';
+  const additive = type === 'C' ? rule === 'parallel' : rule === 'series';
+  const short = type === 'C' ? 'open' : 'wire';
+  const infinite = type === 'C' ? 'wire' : 'open';
   const zero = value => value.kind === short || (value.kind === 'finite' && value.n === '0');
   if (additive) {
     if (values.some(value => value.kind === infinite)) return { kind: infinite };
     const finite = values.filter(value => value.kind === 'finite');
-    if (!finite.length && type === 'R') return WIRE;
-    if (!finite.length && type === 'C') return OPEN;
+    if (!finite.length && short === 'wire') return WIRE;
+    if (!finite.length && short === 'open') return OPEN;
     const result = finite.reduce(add, rational(0));
-    if (type === 'R' && rule === 'series' && result.n === '0') return WIRE;
-    if (type === 'C' && rule === 'parallel' && result.n === '0') return OPEN;
+    if (result.n === '0') return short === 'wire' ? WIRE : OPEN;
     return result;
   }
   if (values.some(zero)) return { kind: short };
@@ -60,26 +59,30 @@ export function combineValues(values, rule, type) {
   if (!finite.length) return { kind: infinite };
   return invert(finite.map(invert).reduce(add, rational(0)));
 }
-export const UNIT_FACTORS = { 'Ω': ['R', rational(1)], 'kΩ': ['R', rational(1000)], 'µF': ['C', rational(1, 1000000)], 'nF': ['C', rational(1, 1000000000)], F: ['C', rational(1)] };
+export const UNITS_BY_TYPE = Object.freeze({ R: ['Ω', 'kΩ'], C: ['µF', 'nF'], L: ['H', 'mH', 'µH'] });
+export const UNIT_FACTORS = { 'Ω': ['R', rational(1)], 'kΩ': ['R', rational(1000)], 'µF': ['C', rational(1, 1000000)], 'nF': ['C', rational(1, 1000000000)], F: ['C', rational(1)], H: ['L', rational(1)], mH: ['L', rational(1, 1000)], 'µH': ['L', rational(1, 1000000)] };
+export function unitForType(settings) {
+  return settings.compType === 'R' ? settings.rUnit || 'Ω' : settings.compType === 'C' ? settings.cUnit || 'µF' : settings.lUnit || 'mH';
+}
 export function formatExact(value, settings, compact = false) {
   if (value.kind !== 'finite') return value.kind === 'wire' ? 'Cable' : 'Abierto';
   if (settings.representation === 'symbolic') {
     const coefficient = value.d === '1' ? (value.n === '1' ? '' : value.n) : `${value.n}/${value.d}`;
     return `${coefficient}${settings.compType}`;
   }
-  const unit = settings.compType === 'R' ? (settings.rUnit || 'Ω') : (settings.cUnit || 'µF');
+  const unit = unitForType(settings);
   const scaled = multiply(value, invert(UNIT_FACTORS[unit][1]));
   const number = Number(scaled.n) / Number(scaled.d);
   return `${Number(number.toPrecision(compact ? 3 : 6)).toLocaleString('es-AR', { maximumSignificantDigits: compact ? 3 : 6 })} ${unit}`;
 }
 
 export function parseAnswer(input, settings) {
-  let text = String(input).trim().replaceAll(',', '.').replaceAll('μ', 'µ').replaceAll('uF', 'µF');
+  let text = String(input).trim().replaceAll(',', '.').replaceAll('μ', 'µ').replace(/u([fFhH])/g, 'µ$1');
   if (text.length > 100) throw new Error('La respuesta es demasiado larga.');
   if (/^(cable|cortocircuito)$/i.test(text)) return WIRE;
   if (/^abierto$/i.test(text)) return OPEN;
-  if (/^(infinito|infinity|∞)$/i.test(text)) return settings.compType === 'R' ? OPEN : WIRE;
-  const suffix = /(kΩ|Ω|µF|nF|F|R|C)$/i.exec(text)?.[0];
+  if (/^(infinito|infinity|∞)$/i.test(text)) return settings.compType === 'C' ? WIRE : OPEN;
+  const suffix = /(kΩ|Ω|µF|µH|nF|mH|H|F|R|C|L)$/i.exec(text)?.[0];
   if (suffix) text = text.slice(0, -suffix.length).trim();
   text = text.replace(/\s*\*\s*$/, '').trim();
   if (!text && suffix) text = '1';
@@ -91,7 +94,7 @@ export function parseAnswer(input, settings) {
   if (settings.representation === 'symbolic') {
     if (suffix && suffix.toUpperCase() !== settings.compType) throw new Error(`Usá múltiplos de ${settings.compType}.`);
   } else {
-    const defaultUnit = settings.compType === 'R' ? settings.rUnit || 'Ω' : settings.cUnit || 'µF';
+    const defaultUnit = unitForType(settings);
     const unit = suffix ? Object.keys(UNIT_FACTORS).find(key => key.toLowerCase() === suffix.toLowerCase()) : defaultUnit;
     if (!unit || UNIT_FACTORS[unit][0] !== settings.compType) throw new Error('La unidad no corresponde a este ejercicio.');
     result = multiply(result, UNIT_FACTORS[unit][1]);

@@ -5,11 +5,16 @@ import { createMiniExercise, createTopicProgress, TOPICS, validateTopicProgress,
 
 export const SESSION_KEY = 'circuit-practice:session:v2';
 const currentExercise = (exercise, now, rewardEligible = true) => ({ exercise, startedAt: now, selected: [], past: [], future: [], attempts: [], pending: null, notice: null, submitted: false, rewardEligible });
-const recentKey = settings => settings.focusRule ? `${settings.difficulty}:${settings.compType}:${settings.focusRule}` : settings.difficulty;
+const recentKey = settings => {
+  const base = settings.focusRule ? `${settings.difficulty}:${settings.compType}:${settings.focusRule}` : settings.difficulty;
+  return settings.compType === 'L' && settings.topicTopology ? `${settings.topicTopology}:${base}` : base;
+};
 function spawn(state, seed, now) {
+  const pureInductor = state.settings.compType === 'L' && state.settings.topicTopology === 'pure';
   const key = recentKey(state.settings), recent = state.recent[key] || (state.settings.focusRule ? [] : state.recent[state.settings.difficulty] || []);
   const exercise = generateExercise(state.settings, seed, recent, state.settings.focusRule);
-  return { ...state, recent: { ...state.recent, [key]: [...recent, exercise.signature].slice(-20) }, current: currentExercise(exercise, now) };
+  const history = [...(pureInductor ? recent.slice(-1) : recent), exercise.signature].slice(pureInductor ? -1 : -20);
+  return { ...state, recent: { ...state.recent, [key]: history }, current: currentExercise(exercise, now) };
 }
 export function createSession({ settings, progress, seed = Date.now(), qaKey = null, now = Date.now() } = {}) {
   return spawn({ version: 2, settings: normalizeSettings(settings), progress: normalizeProgress(progress), topicProgress: createTopicProgress(), topicSession: null, recent: {}, history: [], exam: null, qaKey }, seed, now);
@@ -101,7 +106,7 @@ export function sessionReducer(state, action) {
       if (state.exam?.status === 'active') return state;
       const topic = TOPICS.find(item => item.id === action.topicId);
       if (!topic) return state;
-      const settings = normalizeSettings({ ...state.settings, mode: 'training', compType: topic.compType, focusRule: topic.rule });
+      const settings = normalizeSettings({ ...state.settings, mode: 'training', compType: topic.compType, focusRule: topic.rule, topicTopology: topic.compType === 'L' ? 'pure' : null });
       const topicSession = { topicId: topic.id, phase: 'mini', seed: Number(action.seed ?? Number(current.exercise.seed) + 1), miniIndex: 0, minisInCycle: 0, answered: false, lastAnswer: null, lastCorrect: null, cycles: 0 };
       const history = historyWithAbandoned(state, now);
       return { ...state, settings, exam: null, topicSession, topicProgress: state.topicProgress || createTopicProgress(), history };
@@ -130,19 +135,28 @@ export function sessionReducer(state, action) {
     case 'settings': {
       if (state.exam?.status === 'active') return state;
       const settings = normalizeSettings({ ...state.settings, ...action.settings });
-      const visualOnly = Object.keys(action.settings).every(key => ['flow', 'resistorStyle', 'theme'].includes(key));
+      const visualOnly = Object.keys(action.settings).every(key => ['flow', 'resistorStyle', 'inductorStyle', 'theme'].includes(key));
       if (visualOnly) return record({ ...state, settings }, { kind: 'configuration', settings: action.settings }, now);
       if (state.topicSession?.phase === 'mini' && Object.keys(action.settings).every(key => key === 'difficulty')) {
         return record({ ...state, settings }, { kind: 'configuration', settings: action.settings }, now);
       }
       const recorded = record(state, { kind: 'configuration', settings: action.settings }, now);
       const topic = TOPICS.find(item => item.id === state.topicSession?.topicId);
+      if (topic?.compType === 'L' && Object.hasOwn(action.settings, 'topicTopology')) {
+        const topologyChanged = state.settings.topicTopology !== settings.topicTopology;
+        if (topologyChanged) {
+          const history = historyWithAbandoned(state, now);
+          const topicSession = { ...state.topicSession, phase: 'mini', miniIndex: 0, minisInCycle: 0, answered: false, lastAnswer: null, lastCorrect: null };
+          return { ...recorded, settings, topicSession, history };
+        }
+      }
       const topicSession = state.topicSession && settings.mode === 'training' && settings.compType === topic?.compType && settings.focusRule === topic?.rule ? state.topicSession : null;
       return spawn({ ...recorded, settings, topicSession, exam: null, history: historyWithAbandoned(recorded, now) }, seed, now);
     }
     case 'new':
       if (state.exam?.status === 'active') return state;
-      if (state.topicSession?.phase === 'mini') return spawn({ ...state, settings: normalizeSettings({ ...state.settings, focusRule: null }), topicSession: null, history: historyWithAbandoned(state, now), exam: null }, seed, now);
+      if (state.topicSession) return spawn({ ...state, settings: normalizeSettings({ ...state.settings, focusRule: null, topicTopology: null }), topicSession: null, history: historyWithAbandoned(state, now), exam: null }, seed, now);
+      if (state.settings.topicTopology) return spawn({ ...state, settings: normalizeSettings({ ...state.settings, focusRule: null, topicTopology: null }), history: historyWithAbandoned(state, now), exam: null }, seed, now);
       return spawn({ ...state, history: historyWithAbandoned(state, now), exam: null }, seed, now);
     case 'next':
       if (!current.submitted || state.settings.mode === 'exam') return state;
@@ -150,7 +164,7 @@ export function sessionReducer(state, action) {
       return spawn(state, seed, now);
     case 'exit-topic': {
       if (!state.topicSession || state.exam?.status === 'active') return state;
-      const settings = normalizeSettings({ ...state.settings, focusRule: null, mode: 'training' });
+      const settings = normalizeSettings({ ...state.settings, focusRule: null, topicTopology: null, mode: 'training' });
       const history = historyWithAbandoned(state, now);
       return spawn({ ...state, settings, topicSession: null, exam: null, history }, seed, now);
     }
@@ -160,13 +174,14 @@ export function sessionReducer(state, action) {
       const settings = normalizeSettings({ ...exerciseSettings, focusRule: null });
       const exercise = generateExercise(exerciseSettings, action.item.seed, []);
       exercise.id = `${action.item.id}:repeat:${state.history.length}:${now}`;
-      const key = recentKey(exerciseSettings), recent = [...(state.recent[key] || []), exercise.signature].slice(-20);
+      const pureInductor = exerciseSettings.compType === 'L' && exerciseSettings.topicTopology === 'pure';
+      const key = recentKey(exerciseSettings), recent = [...(pureInductor ? (state.recent[key] || []).slice(-1) : state.recent[key] || []), exercise.signature].slice(pureInductor ? -1 : -20);
       const history = historyWithAbandoned(state, now);
       return { ...state, settings, topicSession: null, exam: null, recent: { ...state.recent, [key]: recent }, current: currentExercise(exercise, now, false), history };
     }
     case 'start-exam': {
       if (state.exam?.status === 'active') return state;
-      const settings = normalizeSettings({ ...state.settings, mode: 'exam', focusRule: null });
+      const settings = normalizeSettings({ ...state.settings, mode: 'exam', focusRule: null, topicTopology: null });
       return spawn({ ...state, settings, topicSession: null, exam: { status: 'active', count: state.settings.examCount, startedAt: now, deadline: state.settings.examMinutes ? now + state.settings.examMinutes * 60000 : null, results: [] } }, seed, now);
     }
     case 'finish-exam': {
@@ -241,6 +256,7 @@ function validSession(saved) {
     if (!validateTopicSession(saved.topicSession)) return false;
     const topic = TOPICS.find(item => item.id === saved.topicSession.topicId);
     if (saved.settings?.mode !== 'training' || saved.settings?.compType !== topic.compType || saved.settings?.focusRule !== topic.rule) return false;
+    if (topic.compType === 'L' ? !['pure', 'mixed'].includes(saved.settings?.topicTopology) : saved.settings?.topicTopology != null) return false;
     if (saved.topicSession.phase === 'circuit' && saved.current.exercise.tree?.type !== topic.rule) return false;
   }
   if (saved.exam == null) return true;
@@ -261,7 +277,7 @@ export function loadSession({ storage, qa, now = Date.now() } = {}) {
         if (!validSession(saved)) throw new Error('Sesión dañada');
         saved.settings = normalizeSettings(saved.settings); saved.progress = normalizeProgress(saved.progress);
         saved.current.rewardEligible ??= true;
-        saved.topicProgress ??= createTopicProgress(); saved.topicSession ??= null;
+        saved.topicProgress = { ...createTopicProgress(), ...(saved.topicProgress || {}) }; saved.topicSession ??= null;
         return { state: sessionReducer(saved, { type: 'tick', now }), warning };
       }
     }

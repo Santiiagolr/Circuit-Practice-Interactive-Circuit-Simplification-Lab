@@ -1,5 +1,5 @@
 const VALID_MODES = new Set(['training', 'exam']);
-const VALID_TYPES = new Set(['R', 'C']);
+const VALID_TYPES = new Set(['R', 'C', 'L']);
 const VALID_DIFFICULTIES = new Set(['guided', 'practice', 'challenge']);
 const VALID_VALUE_MODES = new Set(['varied', 'equal']);
 

@@ -18,6 +18,43 @@ it.each(['R', 'C'])('reduces %s against an independent nodal evaluator in arbitr
     });
   }
 });
+it('reduces L networks against an independent impedance evaluator', () => {
+  for (const difficulty of Object.keys(LEVELS)) for (let seed = 0; seed < 10; seed++) {
+    const exercise = generateExercise({ compType: 'L', difficulty }, seed);
+    const expected = evaluateGraphNetwork(exercise.nodes, exercise.edges, 'L');
+    reduceAll(exercise, !!(seed % 2), !!(seed % 3), state => {
+      expect(inspectDrawing(state)).toEqual([]);
+      expect(expectClose(evaluateGraphNetwork(state.nodes, state.edges, 'L'), expected)).toBe(true);
+    });
+  }
+});
+it.each(['series', 'parallel'])('generates 50 pure L %s circuits per difficulty without immediate repeats or special components', rule => {
+  for (const difficulty of Object.keys(LEVELS)) {
+    let previous = null;
+    for (let seed = 0; seed < 50; seed++) {
+      const exercise = generateExercise({ compType: 'L', topicTopology: 'pure', focusRule: rule, difficulty }, seed, previous ? [previous] : []);
+      expect(exercise.settings.topicTopology).toBe('pure');
+      expect(exercise.tree.type).toBe(rule);
+      expect(exercise.tree.children.every(child => child.type === 'leaf')).toBe(true);
+      expect(exercise.edges.length).toBeGreaterThanOrEqual(LEVELS[difficulty].min);
+      expect(exercise.edges.length).toBeLessThanOrEqual(LEVELS[difficulty].max);
+      expect(exercise.edges.every(edge => edge.compType === 'L')).toBe(true);
+      expect(exercise.familyIndex).toBeLessThan(4);
+      expect(exercise.signature).not.toBe(previous);
+      expect(inspectDrawing(exercise)).toEqual([]);
+      previous = exercise.signature;
+    }
+  }
+});
+it.each(['series', 'parallel'])('generates mixed topic-only L networks focused on %s', rule => {
+  for (let seed = 0; seed < 30; seed++) {
+    const exercise = generateExercise({ compType: 'L', topicTopology: 'mixed', focusRule: rule }, seed);
+    expect(exercise.tree.type).toBe(rule);
+    expect(exercise.tree.children.some(child => child.type !== 'leaf')).toBe(true);
+    expect(exercise.edges.every(edge => edge.compType === 'L')).toBe(true);
+    expect(inspectDrawing(exercise)).toEqual([]);
+  }
+});
 it('keeps stable routes of unselected components, accepts N and rejects duplicates/stale IDs', () => {
   const e = generateExercise({ difficulty: 'challenge' }, 2), move = nextMove(e, true, true);
   expect(validateTopology(e.nodes, e.edges, ['c1', 'c1'], 'parallel').kind).toBe('interface');

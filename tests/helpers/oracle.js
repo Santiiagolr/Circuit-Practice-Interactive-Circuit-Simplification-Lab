@@ -1,6 +1,7 @@
 export function oracleCombine(compType, values, mode) {
   if (values.length === 0) return 0;
   const additive = (compType === 'R' && mode === 'series')
+    || (compType === 'L' && mode === 'series')
     || (compType === 'C' && mode === 'parallel');
   if (additive) {
     return values.includes(Infinity) ? Infinity : values.reduce((sum, value) => sum + value, 0);
@@ -63,17 +64,17 @@ function solveLinear(matrix, vector) {
 export function evaluateGraphNetwork(nodes, edges, compType) {
   const ids = nodes.map((node) => node.id);
   const uf = unionFind(ids);
-  const isShort = (edge) => compType === 'R' ? edge.val === 0 : edge.val === Infinity;
-  const isOpen = (edge) => compType === 'R' ? edge.val === Infinity : edge.val === 0;
+  const isShort = (edge) => compType === 'R' || compType === 'L' ? edge.val === 0 : edge.val === Infinity;
+  const isOpen = (edge) => compType === 'R' || compType === 'L' ? edge.val === Infinity : edge.val === 0;
   edges.filter(isShort).forEach((edge) => uf.union(edge.from, edge.to));
   const source = uf.find('A');
   const sink = uf.find('B');
-  if (source === sink) return compType === 'R' ? 0 : Infinity;
+  if (source === sink) return compType === 'C' ? Infinity : 0;
 
   const reducedEdges = edges.filter((edge) => !isShort(edge) && !isOpen(edge)).map((edge) => ({
     from: uf.find(edge.from),
     to: uf.find(edge.to),
-    conductance: compType === 'R' ? 1 / edge.val : edge.val,
+    conductance: compType === 'C' ? edge.val : 1 / edge.val,
   })).filter((edge) => edge.from !== edge.to);
   const reachable = new Set([source]);
   for (let changed = true; changed;) {
@@ -83,7 +84,7 @@ export function evaluateGraphNetwork(nodes, edges, compType) {
       if (reachable.has(edge.to) && !reachable.has(edge.from)) { reachable.add(edge.from); changed = true; }
     }
   }
-  if (!reachable.has(sink)) return compType === 'R' ? Infinity : 0;
+  if (!reachable.has(sink)) return compType === 'C' ? 0 : Infinity;
   const internal = [...new Set(ids.map(uf.find))].filter((id) => reachable.has(id) && id !== source && id !== sink);
   const indexById = new Map(internal.map((id, index) => [id, index]));
   const matrix = internal.map(() => internal.map(() => 0));
@@ -108,8 +109,8 @@ export function evaluateGraphNetwork(nodes, edges, compType) {
     const voltage = other === sink ? 0 : voltages[indexById.get(other)];
     current += edge.conductance * (1 - voltage);
   }
-  if (current <= 1e-12) return compType === 'R' ? Infinity : 0;
-  return compType === 'R' ? 1 / current : current;
+  if (current <= 1e-12) return compType === 'C' ? 0 : Infinity;
+  return compType === 'C' ? current : 1 / current;
 }
 
 export function expectClose(actual, expected, tolerance = 1e-7) {

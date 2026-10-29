@@ -1,8 +1,8 @@
 # Circuit Practice / Circuitos en equilibrio
 
-Interactive physics laboratory for practicing the simplification of electrical circuits with resistors and capacitors using series and parallel rules.
+Interactive physics laboratory for practicing the simplification of electrical circuits with resistors, capacitors, and ideal inductors using series and parallel rules.
 
-Laboratorio educativo interactivo para practicar la simplificación de circuitos eléctricos con resistencias y capacitores mediante reglas de serie y paralelo.
+Laboratorio educativo interactivo para practicar la simplificación de circuitos eléctricos con resistencias, capacitores e inductores ideales mediante reglas de serie y paralelo.
 
 ## English
 
@@ -16,18 +16,20 @@ The challenge ends when the network is manually reduced to one equivalent compon
 
 - Three reasoning levels: **Basic** (4–6 elements), **Intermediate** (7–10), and **Advanced** (11–15).
 - **Training** and configurable mock exams (3, 5, or 10 exercises, with an optional timer).
-- **Topic practice** for resistor/capacitor series and parallel: two short topology checks followed by a full, manually reduced circuit focused on that rule.
+- **Topic practice** for resistor, capacitor, and inductor series/parallel: two short topology checks followed by a full, manually reduced circuit focused on that rule. Inductor topics let students choose pure or mixed series/parallel networks.
 - A progress view that separates topic accuracy, delivered circuits, free practice, and no-reward repeats.
 - Six geometric circuit families: rectangular frames, ladders, stacked cells, crossbars, triangular cells, and integrated diagonals.
 - Seeded random circuits; electrical validity and drawing geometry are checked before an exercise is shown.
 - Support for:
   - resistors;
   - capacitors;
+  - ideal uncoupled inductors;
   - wires and short circuits;
   - open and closed switches;
   - a battery as the absolute circuit terminal.
-- Physical rules specific to resistors and capacitors.
-- Numeric values in Ω/kΩ and µF/nF, or exact symbolic multiples of `R`/`C`.
+- Physical rules specific to resistors and capacitors, plus ideal inductor equivalents without mutual coupling or transient simulation.
+- Numeric values in Ω/kΩ, µF/nF, and H/mH/µH, or exact symbolic multiples of `R`/`C`/`L`.
+- Two selectable inductor symbols (technical coil and copper coil) with a brief reduced-motion-aware selection pulse.
 - Optional manual equivalent-value entry with a restricted parser (fractions, decimal commas, scientific notation, and units; no code evaluation).
 - Short-circuit detection and visual dead-branch pruning after removing open switches.
 - Manual interaction: the student must select, reason, and execute every operation.

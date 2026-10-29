@@ -26,3 +26,6 @@ it('marks only explicit QA query parameters as reproducible overrides', () => {
   expect(parseQaConfig('', true, 777).explicit).toBe(false);
   expect(parseQaConfig('?mode=exam', true, 777).explicit).toBe(true);
 });
+it('accepts inductors in reproducible QA sessions', () => {
+  expect(parseQaConfig('?type=L&seed=8', true, 7)).toMatchObject({ enabled: true, compType: 'L', seed: 8 });
+});

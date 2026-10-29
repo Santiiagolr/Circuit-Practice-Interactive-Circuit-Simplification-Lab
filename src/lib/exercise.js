@@ -1,6 +1,6 @@
 import { createSeededRandom } from './circuit.js';
 import { astToNetwork, inspectTopologyNetwork, validateTopology, verifyTopologyCertificate } from './topology.js';
-import { combineValues, isExactValue, numericValue, rational, multiply, UNIT_FACTORS, WIRE, OPEN } from './values.js';
+import { combineValues, isExactValue, numericValue, rational, multiply, unitForType, UNIT_FACTORS, UNITS_BY_TYPE, WIRE, OPEN } from './values.js';
 import { layoutNetwork, routeBetweenPorts, inspectDrawing } from './technicalDrawing.js';
 
 export const LEVELS = {
@@ -12,13 +12,14 @@ export const FAMILIES = ['Marco rectangular', 'Escalera', 'Celdas apiladas', 'Tr
 export const DEFAULT_SETTINGS = Object.freeze({
   mode: 'training', difficulty: 'guided', compType: 'R', valueMode: 'varied',
   representation: 'numeric', resistorStyle: 'zigzag', manual: false,
-  flow: false, rUnit: 'Ω', cUnit: 'µF', examCount: 5, examMinutes: 0,
+  flow: false, rUnit: 'Ω', cUnit: 'µF', lUnit: 'mH', inductorStyle: 'schematic', topicTopology: null, examCount: 5, examMinutes: 0,
   theme: 'light', focusRule: null,
 });
 export function normalizeSettings(value = {}) {
   const next = { ...DEFAULT_SETTINGS };
-  const choices = { mode: ['training', 'exam'], difficulty: Object.keys(LEVELS), compType: ['R', 'C'], valueMode: ['varied', 'equal'], representation: ['numeric', 'symbolic'], resistorStyle: ['zigzag', 'rectangle'], rUnit: ['Ω', 'kΩ'], cUnit: ['µF', 'nF'], examCount: [3, 5, 10], examMinutes: [0, 15, 30, 60], theme: ['light', 'dark'], focusRule: [null, 'series', 'parallel'] };
+  const choices = { mode: ['training', 'exam'], difficulty: Object.keys(LEVELS), compType: ['R', 'C', 'L'], valueMode: ['varied', 'equal'], representation: ['numeric', 'symbolic'], resistorStyle: ['zigzag', 'rectangle'], rUnit: UNITS_BY_TYPE.R, cUnit: UNITS_BY_TYPE.C, lUnit: UNITS_BY_TYPE.L, inductorStyle: ['schematic', 'copper'], topicTopology: [null, 'pure', 'mixed'], examCount: [3, 5, 10], examMinutes: [0, 15, 30, 60], theme: ['light', 'dark'], focusRule: [null, 'series', 'parallel'] };
   for (const [key, options] of Object.entries(choices)) if (options.includes(value[key])) next[key] = value[key];
+  if (next.compType !== 'L' || next.mode === 'exam') next.topicTopology = null;
   for (const key of ['manual', 'flow']) if (typeof value[key] === 'boolean') next[key] = value[key];
   return next;
 }
@@ -46,7 +47,7 @@ function exerciseFault(code, message) {
 
 /** Validate the electrical contract and its diagram before any state transition. */
 export function inspectExercise(exercise) {
-  if (!exercise || !exercise.settings || !['R', 'C'].includes(exercise.settings.compType)) return exerciseFault('invalid-exercise-settings', 'El ejercicio no declara un tipo eléctrico compatible.');
+  if (!exercise || !exercise.settings || !['R', 'C', 'L'].includes(exercise.settings.compType)) return exerciseFault('invalid-exercise-settings', 'El ejercicio no declara un tipo eléctrico compatible.');
   const topology = inspectTopologyNetwork(exercise.nodes, exercise.edges);
   if (!topology.valid) return { ...topology, kind: 'fault' };
   if (!Array.isArray(exercise.buses) || exercise.buses.length !== exercise.nodes.length || !Array.isArray(exercise.sourceRoute) || exercise.sourceRoute.length < 2 || !exercise.bounds || !Number.isFinite(exercise.bounds.width) || !Number.isFinite(exercise.bounds.height) || exercise.bounds.width <= 0 || exercise.bounds.height <= 0 || exercise.nodes.some(node => !Number.isFinite(node.x) || !Number.isFinite(node.y))) {
@@ -64,13 +65,13 @@ export function inspectExercise(exercise) {
       const expected = edge.switchState === 'open' ? OPEN.kind : edge.switchState === 'closed' ? WIRE.kind : null;
       if (!expected || edge.value.kind !== expected) return exerciseFault('switch-state-value-mismatch', `El estado y el valor del interruptor ${edge.label || edge.id} no coinciden.`);
     } else if (edge.compType === 'W') {
-      if (edge.value.kind !== 'wire' && !(exercise.settings.compType === 'R' && edge.equivalent && edge.value.kind === 'finite' && edge.value.n === '0')) {
+      if (edge.value.kind !== 'wire' && !(['R', 'L'].includes(exercise.settings.compType) && edge.equivalent && edge.value.kind === 'finite' && edge.value.n === '0')) {
         return exerciseFault('wire-value-mismatch', `El valor del cable ${edge.label || edge.id} no representa un conductor ideal.`);
       }
     } else if (edge.compType !== exercise.settings.compType) {
       return exerciseFault('mixed-component-types', `El componente ${edge.label || edge.id} no corresponde al tipo de este ejercicio.`);
     } else if (edge.value.kind === 'finite') {
-      if (edge.value.n === '0' && !(edge.equivalent && exercise.settings.compType === 'C')) return exerciseFault('zero-passive-component', `${edge.label || edge.id} tiene un valor físico nulo.`);
+      if (edge.value.n === '0' && !(edge.equivalent && ['C', 'L'].includes(exercise.settings.compType))) return exerciseFault('zero-passive-component', `${edge.label || edge.id} tiene un valor físico nulo.`);
       if (edge.value.n === '0' && exercise.settings.compType === 'C' && !edge.equivalent) return exerciseFault('zero-passive-component', `${edge.label || edge.id} tiene una capacitancia física nula.`);
     } else if (!(edge.equivalent && edge.value.kind === 'open')) {
       return exerciseFault('passive-component-special-value', `${edge.label || edge.id} usa un estado reservado para conductores o interruptores.`);
@@ -94,12 +95,15 @@ export function inspectExercise(exercise) {
 export function generateExercise(input = DEFAULT_SETTINGS, seed = Date.now(), recent = [], forcedRule = input?.focusRule ?? null) {
   const settings = normalizeSettings(input), level = LEVELS[settings.difficulty];
   const focusRule = ['series', 'parallel'].includes(forcedRule) ? forcedRule : null;
+  const pureInductor = settings.compType === 'L' && settings.topicTopology === 'pure';
+  const topicInductor = settings.compType === 'L' && settings.topicTopology !== null;
+  if (topicInductor && !focusRule) throw new Error('La práctica temática de inductores requiere una regla principal.');
   for (let attempt = 0; attempt < 512; attempt++) {
     const random = createSeededRandom(`${seed}:${settings.difficulty}:${attempt}`);
     let nextLeaf = 0, nextGroup = 0;
-    const unit = settings.compType === 'R' ? settings.rUnit : settings.cUnit;
+    const unit = unitForType(settings);
     const leaves = [];
-    const family = integer(random, 0, settings.difficulty === 'guided' ? 3 : FAMILIES.length - 1);
+    const family = integer(random, 0, pureInductor || settings.difficulty === 'guided' ? 3 : FAMILIES.length - 1);
     function build(count, depth, parent) {
       if (count === 1) {
         const coefficient = settings.valueMode === 'equal' ? 2 : integer(random, 1, 6);
@@ -113,7 +117,15 @@ export function generateExercise(input = DEFAULT_SETTINGS, seed = Date.now(), re
       for (let remaining = count - n; remaining > 0; remaining--) parts[integer(random, 0, n - 1)]++;
       return { id: `g${++nextGroup}`, type, children: parts.map(size => build(size, depth + 1, type)) };
     }
-    let tree = build(integer(random, level.min, level.max), 1);
+    const componentCount = integer(random, level.min, level.max);
+    let tree = pureInductor
+      ? { type: focusRule, id: `g${++nextGroup}`, children: Array.from({ length: componentCount }, () => {
+        const coefficient = settings.valueMode === 'equal' ? 2 : integer(random, 1, 6);
+        const value = settings.representation === 'symbolic' ? rational(coefficient) : multiply(rational(coefficient * 10), UNIT_FACTORS[unit][1]);
+        const leaf = { type: 'leaf', id: `c${++nextLeaf}`, label: `L${nextLeaf}`, compType: 'L', value, val: numericValue(value, 'L') };
+        leaves.push(leaf); return leaf;
+      }) }
+      : build(componentCount, 1);
     if (family >= 4) {
       const rest = leaves.slice(3);
       function regroup(items, depth, parent) {
@@ -129,8 +141,8 @@ export function generateExercise(input = DEFAULT_SETTINGS, seed = Date.now(), re
       tree = remainder ? { type: 'series', id: `g${++nextGroup}`, children: [triangle, remainder] } : triangle;
     }
     if (focusRule && tree.type !== focusRule) continue;
-    if (!tree.children.some(child => child.type !== 'leaf')) continue;
-    if (settings.difficulty !== 'guided' && random() < 0.7) {
+    if (!pureInductor && !tree.children.some(child => child.type !== 'leaf')) continue;
+    if (!topicInductor && settings.difficulty !== 'guided' && random() < 0.7) {
       const treeLeaves = [];
       const collectLeaves = node => { if (node.type === 'leaf') treeLeaves.push(node); else node.children.forEach(collectLeaves); };
       collectLeaves(tree);
@@ -146,7 +158,7 @@ export function generateExercise(input = DEFAULT_SETTINGS, seed = Date.now(), re
     if (!(expected > 0 && Number.isFinite(expected))) continue;
     const topologySignature = structuralSignature(tree);
     const signature = diagramSignature(tree, family);
-    if (recent.slice(-20).includes(signature)) continue;
+    if (recent.slice(pureInductor ? -1 : -20).includes(signature)) continue;
     const network = layoutNetwork(tree, family);
     const exercise = { ...network, tree, id: `exercise-${seed}`, seed, signature, topologySignature, family: FAMILIES[family], familyIndex: family, attempt, fallback: false, settings, revision: 0, nextEquivalent: 1, initialCount: leaves.length };
     // Geometry is validated before it becomes visible, not merely in a test runner.
@@ -229,7 +241,7 @@ export function reduceExercise(exercise, ids, rule) {
       const kept = [...selected].sort((a, b) => a.route.length - b.route.length || a.id.localeCompare(b.id))[0];
       from = kept.from; to = kept.to; route = kept.route;
     }
-    equivalent = { id: `eq${exercise.nextEquivalent}`, label: `Eq${exercise.nextEquivalent}`, from, to, route, value: check.value, val: numericValue(check.value, exercise.settings.compType), compType: check.value.kind === 'wire' || (exercise.settings.compType === 'R' && check.value.n === '0') ? 'W' : exercise.settings.compType, equivalent: true,
+    equivalent = { id: `eq${exercise.nextEquivalent}`, label: `Eq${exercise.nextEquivalent}`, from, to, route, value: check.value, val: numericValue(check.value, exercise.settings.compType), compType: check.value.kind === 'wire' || (['R', 'L'].includes(exercise.settings.compType) && check.value.kind === 'finite' && check.value.n === '0') ? 'W' : exercise.settings.compType, equivalent: true,
       origin: { rule, components: selected.map(edge => ({ id: edge.id, label: edge.label, value: edge.value, origin: edge.origin })) } };
     edges.push(equivalent);
   }

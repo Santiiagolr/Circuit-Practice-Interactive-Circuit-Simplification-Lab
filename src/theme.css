@@ -29,6 +29,7 @@
   --result-bg: #FFF7E8;
   --result-line: #D9B66F;
   --muted-element: #8392A2;
+  --inductor-copper: #A8582C;
   --scroll-thumb: #B9C8D7;
   --shadow: 0 14px 36px rgb(20 42 65 / 8%);
   --radius-card: 16px;
@@ -66,6 +67,7 @@
   --result-bg: #3A3121;
   --result-line: #806A3F;
   --muted-element: #8295A9;
+  --inductor-copper: #E4A476;
   --scroll-thumb: #52677E;
   --shadow: 0 18px 48px rgb(0 0 0 / 24%);
 }
@@ -1129,5 +1131,54 @@ html[data-theme="dark"] .practice-app[data-theme="dark"] .topic-next-circuit {
 
   .topic-card:hover {
     transform: none;
+  }
+}
+
+.circuit-component[data-component-type="L"][data-inductor-style="copper"]:not(.selected):not(.equivalent) {
+  color: var(--inductor-copper);
+}
+
+.inductor-coil-copper ellipse {
+  fill: var(--paper);
+  stroke: currentColor;
+  stroke-width: 4;
+  vector-effect: non-scaling-stroke;
+}
+
+.inductor-coil-copper .inductor-core {
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 7;
+  opacity: .24;
+  stroke-linecap: round;
+}
+
+.inductor-coil-copper .inductor-highlight {
+  fill: none;
+  stroke: var(--paper);
+  stroke-width: 1;
+  opacity: .72;
+}
+
+.inductor-pulse .electrical-symbol.inductor-symbol {
+  animation: inductor-selection-pulse 360ms ease-out;
+}
+
+@keyframes inductor-selection-pulse {
+  0% { opacity: .55; }
+  45% { opacity: 1; }
+  100% { opacity: .9; }
+}
+
+.topic-controls {
+  display: grid;
+  gap: 8px;
+  min-width: 190px;
+}
+
+@media (max-width: 700px) {
+  .topic-controls {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    margin-top: 14px;
   }
 }
