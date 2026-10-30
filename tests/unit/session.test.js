@@ -7,12 +7,12 @@ import { parseQaConfig } from '../../src/lib/qaConfig.js';
 import { reconstructHistory } from '../../src/lib/practiceReview.js';
 import { createMiniExercise, TOPICS } from '../../src/lib/topicPractice.js';
 const act = (s, type, extra = {}) => sessionReducer(s, { type, now: 1000, ...extra });
-function move(state) {
-  const next = nextMove(state.current.exercise, false, true);
+function move(state, multi = true) {
+  const next = nextMove(state.current.exercise, false, multi);
   for (const id of next.ids) state = act(state, 'select', { id });
   return act(state, 'reduce', { rule: next.rule });
 }
-function complete(state) { while (!isComplete(state.current.exercise)) state = move(state); return state; }
+function complete(state, multi = true) { while (!isComplete(state.current.exercise)) state = move(state, multi); return state; }
 const storage = () => { const data = new Map(); return { getItem: key => data.get(key) || null, setItem: (key, value) => data.set(key, value) }; };
 it('starts L topics pure, switches to mixed without skipping minis, and restores the selected mode', () => {
   let s = act(createSession({ seed: 21, now: 0 }), 'start-topic', { topicId: 'L-series' });
@@ -85,13 +85,115 @@ it('repeats a pure L topic circuit without forcing the next free circuit into to
   expect(s.settings.topicTopology).toBe(null);
   expect(s.current.exercise.settings.topicTopology).toBe(null);
 });
-it('keeps rewards independent of grouping size and awards only on delivery once', () => {
+it('awards difficulty-scaled step points while preserving the separate delivery reward', () => {
+  const rates = { guided: 1, practice: 2, challenge: 3 };
+  for (const [difficulty, rate] of Object.entries(rates)) {
+    let s = createSession({ seed: 817, settings: { difficulty, compType: 'L', topicTopology: 'pure', focusRule: 'series', valueMode: 'equal' }, now: 0 });
+    const initialCount = s.current.exercise.edges.length;
+    const firstMove = nextMove(s.current.exercise, false, true);
+    const beforeFloor = s.current.stepRewardFloor;
+    s = move(s);
+    const expectedFirstAward = Math.max(0, beforeFloor - s.current.exercise.edges.length) * rate;
+    expect(s.progress.score).toBe(expectedFirstAward);
+    expect(s.current.earnedStepPoints).toBe(expectedFirstAward);
+    expect(s.progress.stepStreak).toBe(1);
+    expect(firstMove.ids.length).toBeGreaterThan(1);
+    s = complete(s);
+    const pointsFromSteps = s.current.earnedStepPoints;
+    expect(pointsFromSteps).toBe((initialCount - 1) * rate);
+    const beforeDelivery = s.progress.score;
+    s = act(s, 'submit');
+    expect(s.progress.score).toBe(beforeDelivery + ({ guided: 10, practice: 20, challenge: 35 }[difficulty]));
+    expect(s.history.at(-1).stepPoints).toBe(pointsFromSteps);
+    expect(s.history.at(-1).reward.points).toBe(({ guided: 10, practice: 20, challenge: 35 }[difficulty]));
+    expect(s.current.exercise.edges.length).toBe(1);
+    expect(s.current.submitted).toBe(true);
+    expect(act(s, 'submit').progress).toEqual(s.progress);
+    s = act(s, 'next');
+    expect(s.current.exercise.id).not.toBe('exercise-817');
+    expect(s.current.submitted).toBe(false);
+  }
+});
+
+it('credits the same net simplification whether components are grouped or reduced in pairs', () => {
+  for (const multi of [false, true]) {
+    let s = createSession({ seed: 814, settings: { difficulty: 'guided', compType: 'R', valueMode: 'equal' }, now: 0 });
+    const expected = s.current.exercise.edges.length - 1;
+    s = complete(s, multi);
+    expect(s.current.earnedStepPoints).toBe(expected);
+    expect(s.progress.score).toBe(expected);
+  }
+});
+
+it('does not restore the reward floor on undo or redo and preserves earned points through reload', () => {
+  let s = createSession({ seed: 816, settings: { difficulty: 'guided' }, now: 0 });
+  s = move(s);
+  const score = s.progress.score, floor = s.current.stepRewardFloor, saved = storage();
+  s = act(s, 'undo');
+  expect(s.progress.score).toBe(score);
+  expect(s.current.stepRewardFloor).toBe(floor);
+  s = act(s, 'redo');
+  expect(s.progress.score).toBe(score);
+  expect(s.current.stepRewardFloor).toBe(floor);
+  expect(s.current.earnedStepPoints).toBe(score);
+  saveSession(s, saved);
+  s = loadSession({ storage: saved, now: 2000 }).state;
+  expect(s.progress.score).toBe(score);
+  expect(s.current.earnedStepPoints).toBe(score);
+  expect(s.current.stepRewardFloor).toBe(floor);
+});
+
+it('keeps earned points after a mistake and isolates both streaks during a no-points repeat', () => {
+  let s = createSession({ seed: 815, settings: { difficulty: 'guided' }, progress: { streak: 5, stepStreak: 4 }, now: 0 });
+  s = move(s);
+  const earned = s.progress.score;
+  const invalid = nextMove(s.current.exercise);
+  for (const id of invalid.ids) s = act(s, 'select', { id });
+  s = act(s, 'reduce', { rule: invalid.rule === 'series' ? 'parallel' : 'series' });
+  expect(s.progress.score).toBe(earned);
+  expect(s.progress.stepStreak).toBe(0);
+  expect(s.progress.streak).toBe(0);
+
+  let delivered = complete(createSession({ seed: 813, settings: { difficulty: 'guided' }, now: 0 }));
+  delivered = act(delivered, 'submit');
+  delivered = { ...delivered, progress: { ...delivered.progress, streak: 7, stepStreak: 9, score: 500 } };
+  const before = delivered.progress;
+  delivered = act(delivered, 'repeat', { item: delivered.history.at(-1) });
+  const wrong = nextMove(delivered.current.exercise);
+  for (const id of wrong.ids) delivered = act(delivered, 'select', { id });
+  delivered = act(delivered, 'reduce', { rule: wrong.rule === 'series' ? 'parallel' : 'series' });
+  expect(delivered.current.rewardEligible).toBe(false);
+  expect(delivered.progress).toEqual(before);
+});
+
+it('migrates an old session without retroactive step rewards and records earned points when abandoned', () => {
+  const db = storage();
+  let s = createSession({ seed: 812, settings: { difficulty: 'guided' }, progress: { score: 70, streak: 3, bestStreak: 5 }, now: 0 });
+  saveSession(s, db);
+  const legacy = JSON.parse(db.getItem(SESSION_KEY));
+  delete legacy.progress.stepStreak;
+  delete legacy.progress.bestStepStreak;
+  delete legacy.current.stepRewardFloor;
+  delete legacy.current.earnedStepPoints;
+  db.setItem(SESSION_KEY, JSON.stringify(legacy));
+  s = loadSession({ storage: db, now: 1000 }).state;
+  expect(s.progress).toMatchObject({ score: 70, streak: 3, stepStreak: 0, bestStepStreak: 0 });
+  expect(s.current.stepRewardFloor).toBe(s.current.exercise.edges.length);
+  expect(s.current.earnedStepPoints).toBe(0);
+  s = move(s);
+  const scoreAfterStep = s.progress.score;
+  s = act(s, 'settings', { settings: { compType: 'C' } });
+  expect(s.history.at(-1)).toMatchObject({ status: 'abandoned', stepPoints: scoreAfterStep - 70 });
+  expect(s.progress.score).toBe(scoreAfterStep);
+});
+
+it('keeps the exercise complete and delivery reward idempotent', () => {
   let s = complete(createSession({ seed: 817, now: 0 }));
-  expect(s.progress.score).toBe(0);
   const first = s.current.exercise;
   s = act(s, 'undo'); expect(isComplete(s.current.exercise)).toBe(false);
   s = act(s, 'redo'); expect(s.current.exercise).toEqual(first);
-  s = act(s, 'submit'); expect(s.progress).toMatchObject({ score: 10, completed: 1, streak: 1 });
+  const scoreBeforeDelivery = s.progress.score;
+  s = act(s, 'submit'); expect(s.progress).toMatchObject({ score: scoreBeforeDelivery + 10, completed: 1, streak: 1 });
   expect(s.current.exercise).toBe(first);
   expect(s.current.submitted).toBe(true);
   expect(act(s, 'submit').progress).toEqual(s.progress);
@@ -123,10 +225,10 @@ it('manual entry is atomic, stale/duplicate actions do not count as student mist
   expect(s.current.exercise.edges.length).toBeLessThan(before.edges.length);
   expect(act(s, 'answer', { text: `${expected.n}/${expected.d}C` })).toBe(s);
 });
-it('preserves streak when changing config, requesting hints and undoing', () => {
+it('preserves the circuit streak and earned step streak when changing config, requesting hints and undoing', () => {
   let s = createSession({ seed: 0, progress: { streak: 5, score: 100, bestStreak: 5 }, now: 0 });
   s = act(s, 'hint'); s = move(s); s = act(s, 'undo'); s = act(s, 'settings', { settings: { compType: 'C' } });
-  expect(s.progress).toMatchObject({ streak: 5, score: 100 });
+  expect(s.progress).toMatchObject({ streak: 5, score: 102, stepStreak: 1, bestStepStreak: 1 });
   expect(s.history.at(-1).attempts.at(-1).kind).toBe('configuration');
 });
 it('records appearance changes without resetting the exercise or streak', () => {
@@ -169,7 +271,7 @@ it('repeats a delivered exercise without issuing additional points and reconstru
   expect(reconstructHistory({ ...item, attempts: [{ ...item.attempts.find(attempt => attempt.kind === 'reduction'), components: [{ id: 'missing', label: 'R', value: { kind: 'finite', n: '1', d: '1' } }] }] }).valid).toBe(false);
 });
 it('cycles topic minis into a focused manual circuit, tracks topic stats, and separates mini rewards', () => {
-  let s = createSession({ seed: 61, progress: { score: 20, streak: 3, bestStreak: 4 }, now: 0 });
+  let s = createSession({ seed: 61, progress: { score: 20, streak: 3, bestStreak: 4, stepStreak: 6, bestStepStreak: 7 }, now: 0 });
   s = act(s, 'start-topic', { topicId: 'C-parallel', seed: 300 });
   expect(s.topicSession).toMatchObject({ phase: 'mini', miniIndex: 0, minisInCycle: 0 });
   expect(s.settings).toMatchObject({ compType: 'C', focusRule: 'parallel' });
@@ -179,7 +281,7 @@ it('cycles topic minis into a focused manual circuit, tracks topic stats, and se
   s = act(s, 'continue-topic');
   const second = createMiniExercise('C-parallel', 300, 1, s.settings);
   s = act(s, 'topic-answer', { answer: second.answer === 'yes' ? 'no' : 'yes' });
-  expect(s.progress.streak).toBe(0);
+  expect(s.progress).toMatchObject({ streak: 0, stepStreak: 0, bestStepStreak: 7 });
   s = act(s, 'continue-topic');
   expect(s.topicSession.phase).toBe('circuit');
   expect(s.current.exercise.tree.type).toBe('parallel');
@@ -297,6 +399,6 @@ it('completes a three-exercise mock exam and does not double-deliver', () => {
   s = act(s, 'start-exam');
   for (let i = 0; i < 3; i++) s = act(complete(s), 'submit');
   expect(s.exam.status).toBe('finished'); expect(s.exam.results).toHaveLength(3);
-  expect(s.progress).toMatchObject({ score: 45, streak: 3, completed: 3 });
+  expect(s.progress).toMatchObject({ score: 45 + s.exam.results.reduce((total, item) => total + item.stepPoints, 0), streak: 3, completed: 3 });
   expect(act(s, 'submit')).toBe(s);
 });

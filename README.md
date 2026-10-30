@@ -95,6 +95,8 @@ The launcher requires Node.js and an installed `node_modules/` directory. It sel
 
 The launcher source is available at `tools/CircuitPracticeLauncher/CircuitPracticeLauncher.cs`.
 
+On Windows, starting the launcher, `npm run dev`, or `npm run preview` creates or refreshes the desktop shortcut with the D2 RLC icon. Existing shortcuts to this launcher are reused. The same icon appears in the browser tab. QA, CI and noninteractive launcher checks skip desktop changes; set `CIRCUIT_PRACTICE_NO_SHORTCUT=1` to disable them for a normal launch.
+
 ### Available scripts
 
 | Command | Description |
@@ -259,6 +261,8 @@ El repositorio incluye `CircuitPractice.exe` como launcher para Windows. Hacé d
 El launcher requiere Node.js y la carpeta `node_modules/` instalada. Selecciona un puerto local disponible entre `5173` y `5199`, mantiene abierta la consola de Vite mientras la aplicación está activa y detiene el servidor cuando presionás `Ctrl+C`.
 
 El código fuente del launcher está en `tools/CircuitPracticeLauncher/CircuitPracticeLauncher.cs`.
+
+En Windows, al iniciar el launcher, `npm run dev` o `npm run preview`, se crea o actualiza el acceso directo del escritorio con el icono RLC D2. Se reutilizan los accesos existentes al launcher. El navegador también muestra este icono en la pestaña. QA, CI y las pruebas no interactivas del launcher omiten los cambios del escritorio; podés usar `CIRCUIT_PRACTICE_NO_SHORTCUT=1` para desactivarlos en un inicio normal.
 
 ### Scripts disponibles
 

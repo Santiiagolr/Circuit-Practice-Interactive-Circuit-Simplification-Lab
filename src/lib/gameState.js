@@ -5,6 +5,8 @@ export const EMPTY_PROGRESS = Object.freeze({
   streak: 0,
   bestStreak: 0,
   completed: 0,
+  stepStreak: 0,
+  bestStepStreak: 0,
 });
 
 export const INITIAL_INTERACTION_STATE = Object.freeze({
@@ -33,6 +35,8 @@ export function normalizeProgress(value = {}) {
     streak: safeProgressValue(value?.streak),
     bestStreak: safeProgressValue(value?.bestStreak),
     completed: safeProgressValue(value?.completed),
+    stepStreak: safeProgressValue(value?.stepStreak),
+    bestStepStreak: safeProgressValue(value?.bestStepStreak),
   };
 }
 

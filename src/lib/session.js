@@ -4,7 +4,8 @@ import { isExactValue, parseAnswer, answersMatch } from './values.js';
 import { createMiniExercise, createTopicProgress, TOPICS, validateTopicProgress, validateTopicSession } from './topicPractice.js';
 
 export const SESSION_KEY = 'circuit-practice:session:v2';
-const currentExercise = (exercise, now, rewardEligible = true) => ({ exercise, startedAt: now, selected: [], past: [], future: [], attempts: [], pending: null, notice: null, submitted: false, rewardEligible });
+const STEP_POINTS_BY_DIFFICULTY = Object.freeze({ guided: 1, practice: 2, challenge: 3 });
+const currentExercise = (exercise, now, rewardEligible = true) => ({ exercise, startedAt: now, selected: [], past: [], future: [], attempts: [], pending: null, notice: null, submitted: false, rewardEligible, stepRewardFloor: exercise.edges.length, earnedStepPoints: 0 });
 const recentKey = settings => {
   const base = settings.focusRule ? `${settings.difficulty}:${settings.compType}:${settings.focusRule}` : settings.difficulty;
   return settings.compType === 'L' && settings.topicTopology ? `${settings.topicTopology}:${base}` : base;
@@ -29,17 +30,28 @@ function wrong(state, message, now, detail) {
   const next = record(state, { kind: 'error', message, ...detail }, now);
   const topicSession = state.topicSession?.phase === 'circuit' ? state.topicSession : null;
   const topicProgress = topicSession ? { ...state.topicProgress, [topicSession.topicId]: { ...state.topicProgress[topicSession.topicId], circuitErrors: state.topicProgress[topicSession.topicId].circuitErrors + 1 } } : state.topicProgress;
-  return report({ ...next, progress: { ...next.progress, streak: 0 }, topicProgress }, state.exam?.status === 'active' ? 'Respuesta incorrecta. Podés reintentar.' : message, 'error');
+  const progress = state.current.rewardEligible === false ? state.progress : { ...next.progress, streak: 0, stepStreak: 0 };
+  return report({ ...next, progress, topicProgress }, state.exam?.status === 'active' ? 'Respuesta incorrecta. Podés reintentar.' : message, 'error');
 }
 function commit(state, ids, rule, now) {
   const result = reduceExercise(state.current.exercise, ids, rule);
   if (!result.valid) return report(state, result.message, result.status === 'fault' ? 'error' : 'warning');
+  const previousFloor = state.current.stepRewardFloor ?? state.current.exercise.edges.length;
+  const nextFloor = Math.min(previousFloor, result.exercise.edges.length);
+  const newAdvance = rule === 'delete' ? 0 : Math.max(0, previousFloor - result.exercise.edges.length);
+  const stepPoints = state.current.rewardEligible !== false && newAdvance > 0 ? newAdvance * STEP_POINTS_BY_DIFFICULTY[state.settings.difficulty] : 0;
+  const progress = stepPoints > 0 ? {
+    ...state.progress,
+    score: state.progress.score + stepPoints,
+    stepStreak: state.progress.stepStreak + 1,
+    bestStepStreak: Math.max(state.progress.bestStepStreak, state.progress.stepStreak + 1),
+  } : state.progress;
   const next = record(state, { kind: 'reduction', rule, components: result.selected.map(edge => ({ id: edge.id, label: edge.label, value: edge.value })), equivalent: result.equivalent && { label: result.equivalent.label, value: result.equivalent.value } }, now);
-  return { ...next, current: { ...next.current, exercise: result.exercise, past: [...next.current.past, state.current.exercise], future: [], selected: [], pending: null, notice: { kind: 'success', message: isComplete(result.exercise) ? 'Circuito reducido. Revisá el resultado y entregá cuando estés listo.' : rule === 'delete' ? 'Interruptor abierto eliminado; ramas desconectadas podadas.' : 'Reducción confirmada.' } } };
+  return { ...next, progress, current: { ...next.current, exercise: result.exercise, past: [...next.current.past, state.current.exercise], future: [], selected: [], pending: null, stepRewardFloor: nextFloor, earnedStepPoints: state.current.earnedStepPoints + stepPoints, notice: { kind: 'success', message: isComplete(result.exercise) ? 'Circuito reducido. Revisá el resultado y entregá cuando estés listo.' : rule === 'delete' ? 'Interruptor abierto eliminado; ramas desconectadas podadas.' : 'Reducción confirmada.' } } };
 }
 function resultRecord(state, now, status, reward = null) {
   const { exercise, attempts, startedAt } = state.current;
-  return { id: exercise.id, seed: exercise.seed, settings: exercise.settings, family: exercise.family, topicId: state.topicSession?.phase === 'circuit' ? state.topicSession.topicId : null, initial: state.current.past[0] || exercise, final: exercise, attempts, status, reward, repeat: !state.current.rewardEligible,
+  return { id: exercise.id, seed: exercise.seed, settings: exercise.settings, family: exercise.family, topicId: state.topicSession?.phase === 'circuit' ? state.topicSession.topicId : null, initial: state.current.past[0] || exercise, final: exercise, attempts, status, reward, repeat: !state.current.rewardEligible, stepPoints: state.current.earnedStepPoints || 0,
     steps: attempts.filter(item => item.kind === 'reduction').length, errors: attempts.filter(item => item.kind === 'error').length, undos: attempts.filter(item => item.kind === 'undo').length, elapsed: Math.max(0, now - startedAt) };
 }
 function historyWithAbandoned(state, now) {
@@ -52,7 +64,7 @@ function expire(state, now) {
   if (state.exam?.status !== 'active' || !state.exam.deadline || now < state.exam.deadline) return state;
   const item = resultRecord(state, state.exam.deadline, 'incomplete');
   const results = [...state.exam.results, item];
-  while (results.length < state.exam.count) results.push({ id: `pending-${results.length}`, status: 'incomplete', steps: 0, errors: 0, undos: 0, elapsed: 0, attempts: [] });
+  while (results.length < state.exam.count) results.push({ id: `pending-${results.length}`, status: 'incomplete', steps: 0, stepPoints: 0, errors: 0, undos: 0, elapsed: 0, attempts: [] });
   return { ...state, history: [...state.history, item].slice(-200), exam: { ...state.exam, status: 'finished', expired: true, results }, current: { ...state.current, pending: null, selected: [], submitted: true } };
 }
 export function sessionReducer(state, action) {
@@ -121,7 +133,7 @@ export function sessionReducer(state, action) {
       catch { return report(state, 'El mini ejercicio no superó la verificación y no se registró una respuesta.', 'error'); }
       const correct = mini.answer === action.answer;
       const counts = state.topicProgress[topic.id] || { minis: 0, miniCorrect: 0, miniErrors: 0, circuits: 0, circuitErrors: 0 };
-      return { ...state, progress: correct ? state.progress : { ...state.progress, streak: 0 }, topicProgress: { ...state.topicProgress, [topic.id]: { ...counts, minis: counts.minis + 1, miniCorrect: counts.miniCorrect + Number(correct), miniErrors: counts.miniErrors + Number(!correct) } }, topicSession: { ...topicSession, answered: true, minisInCycle: topicSession.minisInCycle + 1, lastAnswer: action.answer, lastCorrect: correct } };
+      return { ...state, progress: correct ? state.progress : { ...state.progress, streak: 0, stepStreak: 0 }, topicProgress: { ...state.topicProgress, [topic.id]: { ...counts, minis: counts.minis + 1, miniCorrect: counts.miniCorrect + Number(correct), miniErrors: counts.miniErrors + Number(!correct) } }, topicSession: { ...topicSession, answered: true, minisInCycle: topicSession.minisInCycle + 1, lastAnswer: action.answer, lastCorrect: correct } };
     }
     case 'continue-topic': {
       const topicSession = state.topicSession;
@@ -236,7 +248,7 @@ function validHistoricalExercise(exercise) {
   return !exercise || Boolean(exercise && Array.isArray(exercise.edges) && exercise.edges.length > 0 && exercise.edges.length <= 30 && exercise.edges.every(edge => edge && validStoredValue(edge.value)));
 }
 function validHistoryItem(item) {
-  return Boolean(item && typeof item.id === 'string' && ['complete', 'incomplete', 'abandoned'].includes(item.status) && (item.topicId == null || TOPICS.some(topic => topic.id === item.topicId)) && (item.repeat == null || typeof item.repeat === 'boolean') && ['steps', 'errors', 'undos', 'elapsed'].every(key => Number.isFinite(item[key]) && item[key] >= 0) && Array.isArray(item.attempts) && item.attempts.length <= 1000 && item.attempts.every(validAttempt) && (item.settings == null || typeof item.settings === 'object') && validHistoricalExercise(item.initial) && validHistoricalExercise(item.final) && (item.reward == null || Number.isFinite(item.reward.points) && item.reward.points >= 0));
+  return Boolean(item && typeof item.id === 'string' && ['complete', 'incomplete', 'abandoned'].includes(item.status) && (item.topicId == null || TOPICS.some(topic => topic.id === item.topicId)) && (item.repeat == null || typeof item.repeat === 'boolean') && (item.stepPoints == null || Number.isSafeInteger(item.stepPoints) && item.stepPoints >= 0) && ['steps', 'errors', 'undos', 'elapsed'].every(key => Number.isFinite(item[key]) && item[key] >= 0) && Array.isArray(item.attempts) && item.attempts.length <= 1000 && item.attempts.every(validAttempt) && (item.settings == null || typeof item.settings === 'object') && validHistoricalExercise(item.initial) && validHistoricalExercise(item.final) && (item.reward == null || Number.isFinite(item.reward.points) && item.reward.points >= 0));
 }
 function validSession(saved) {
   if (!saved || saved.version !== 2 || !validExercise(saved.current?.exercise)) return false;
@@ -244,6 +256,8 @@ function validSession(saved) {
   if (!Array.isArray(current.past) || current.past.length > 30 || !current.past.every(validExercise) || !Array.isArray(current.future) || current.future.length > 30 || !current.future.every(validExercise)) return false;
   if (!Array.isArray(current.attempts) || current.attempts.length > 1000 || !current.attempts.every(validAttempt) || !Array.isArray(current.selected) || new Set(current.selected).size !== current.selected.length || current.selected.some(id => !edgeIds.has(id))) return false;
   if (!Number.isFinite(current.startedAt) || typeof current.submitted !== 'boolean' || current.notice != null && (typeof current.notice.message !== 'string' || typeof current.notice.kind !== 'string')) return false;
+  if (current.stepRewardFloor != null && (!Number.isSafeInteger(current.stepRewardFloor) || current.stepRewardFloor < 1 || current.stepRewardFloor > 30)) return false;
+  if (current.earnedStepPoints != null && (!Number.isSafeInteger(current.earnedStepPoints) || current.earnedStepPoints < 0)) return false;
   if (current.pending != null && (!Array.isArray(current.pending.ids) || current.pending.ids.length < 2 || current.pending.ids.some(id => !edgeIds.has(id)) || !['series', 'parallel'].includes(current.pending.rule) || current.pending.revision !== current.exercise.revision || !validStoredValue(current.pending.value))) return false;
   if (current.pending != null) {
     if (!saved.settings?.manual) return false;
@@ -277,6 +291,8 @@ export function loadSession({ storage, qa, now = Date.now() } = {}) {
         if (!validSession(saved)) throw new Error('Sesión dañada');
         saved.settings = normalizeSettings(saved.settings); saved.progress = normalizeProgress(saved.progress);
         saved.current.rewardEligible ??= true;
+        saved.current.stepRewardFloor ??= saved.current.exercise.edges.length;
+        saved.current.earnedStepPoints ??= 0;
         saved.topicProgress = { ...createTopicProgress(), ...(saved.topicProgress || {}) }; saved.topicSession ??= null;
         return { state: sessionReducer(saved, { type: 'tick', now }), warning };
       }

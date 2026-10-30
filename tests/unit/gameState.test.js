@@ -12,14 +12,15 @@ import {
 describe('progress persistence and scoring', () => {
   it('normalizes corrupt or hostile values', () => {
     expect(normalizeProgress({ score: -4, streak: '3.8', completed: Infinity })).toEqual({
-      score: 0, streak: 3, bestStreak: 0, completed: 0,
+      score: 0, streak: 3, bestStreak: 0, completed: 0, stepStreak: 0, bestStepStreak: 0,
     });
-    expect(readProgress({ getItem: () => '{bad json' })).toEqual({ score: 0, streak: 0, bestStreak: 0, completed: 0 });
+    expect(normalizeProgress({ stepStreak: '8.9', bestStepStreak: -1 })).toMatchObject({ stepStreak: 8, bestStepStreak: 0 });
+    expect(readProgress({ getItem: () => '{bad json' })).toEqual({ score: 0, streak: 0, bestStreak: 0, completed: 0, stepStreak: 0, bestStepStreak: 0 });
   });
 
   it('does not crash when storage is blocked', () => {
     const blocked = { getItem: () => { throw new Error('blocked'); }, setItem: () => { throw new Error('blocked'); } };
-    expect(readProgress(blocked)).toEqual({ score: 0, streak: 0, bestStreak: 0, completed: 0 });
+    expect(readProgress(blocked)).toEqual({ score: 0, streak: 0, bestStreak: 0, completed: 0, stepStreak: 0, bestStepStreak: 0 });
     expect(writeProgress({ score: 10 }, blocked)).toBe(false);
   });
 
@@ -27,7 +28,7 @@ describe('progress persistence and scoring', () => {
     const clean = calculateReward({ streak: 3 }, 'challenge', false);
     expect(clean).toEqual({ points: 50, streak: 4, clean: true });
     expect(applyReward({ score: 5, streak: 3, bestStreak: 3, completed: 1 }, clean)).toEqual({
-      score: 55, streak: 4, bestStreak: 4, completed: 2,
+      score: 55, streak: 4, bestStreak: 4, completed: 2, stepStreak: 0, bestStepStreak: 0,
     });
     expect(calculateReward({ streak: 8 }, 'practice', true)).toEqual({ points: 20, streak: 0, clean: false });
   });
