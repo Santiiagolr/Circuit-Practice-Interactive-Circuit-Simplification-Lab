@@ -24,6 +24,7 @@ lerna-debug.log*
 coverage/
 playwright-report/
 test-results/
+output/playwright/
 .playwright-mcp/
 tmp/
 

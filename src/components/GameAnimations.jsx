@@ -1,40 +1,34 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
+import { createPortal } from 'react-dom';
 import { formatExact } from '../lib/values.js';
-
-export function useReducedMotion() {
-  const [reduced, setReduced] = useState(() => typeof window !== 'undefined' && window.matchMedia?.('(prefers-reduced-motion: reduce)').matches === true);
-  useEffect(() => {
-    const query = window.matchMedia?.('(prefers-reduced-motion: reduce)');
-    if (!query) return undefined;
-    const update = event => setReduced(event.matches);
-    setReduced(query.matches);
-    query.addEventListener?.('change', update);
-    return () => query.removeEventListener?.('change', update);
-  }, []);
-  return reduced;
-}
+import { useReducedMotion } from '../lib/useReducedMotion.js';
 
 export function ScoreFeedback({ value, event = null }) {
-  const reduced = useReducedMotion();
+  const preferenceReduced = useReducedMotion();
+  const reduced = preferenceReduced || event?.motionDisabled === true;
   const [displayed, setDisplayed] = useState(value);
   const displayedRef = useRef(value), floatRef = useRef(null);
+  const [hiddenGainId, setHiddenGainId] = useState(null);
+  useEffect(() => {
+    if (!event?.id || !reduced) return undefined;
+    const timer = setTimeout(() => setHiddenGainId(event.id), 500);
+    return () => clearTimeout(timer);
+  }, [event?.id, reduced]);
 
   useEffect(() => {
     if (!event?.id) {
       displayedRef.current = value;
-      setDisplayed(value);
       return undefined;
     }
     if (reduced) {
       displayedRef.current = value;
-      setDisplayed(value);
       return undefined;
     }
     let frame = 0, start = null;
-    const from = displayedRef.current, duration = Math.max(1, event.duration || 500);
+    const from = displayedRef.current, duration = event.duration === 320 ? 240 : 370;
     const tick = timestamp => {
       start ??= timestamp;
-      const progress = Math.min(1, (timestamp - start) / duration);
+      const progress = Math.max(0, Math.min(1, (timestamp - start - (event.delay || 0) - 80) / duration));
       const eased = 1 - (1 - progress) ** 3;
       const current = Math.round(from + (value - from) * eased);
       displayedRef.current = current;
@@ -44,35 +38,44 @@ export function ScoreFeedback({ value, event = null }) {
     };
     frame = requestAnimationFrame(tick);
     return () => cancelAnimationFrame(frame);
-  }, [value, event?.id, event?.duration, reduced]);
+  }, [value, event?.id, event?.duration, event?.delay, reduced]);
 
   useEffect(() => {
     const node = floatRef.current;
     if (!node || !event?.id || !event.amount || reduced || typeof node.animate !== 'function') return undefined;
     const animation = node.animate([
       { opacity: 0, transform: 'translate(-50%, 18px)' },
-      { opacity: 1, transform: 'translate(-50%, 7px)', offset: 0.16 },
-      { opacity: 1, transform: 'translate(-50%, -13px)', offset: 0.6 },
-      { opacity: 0, transform: 'translate(-50%, -18px)' },
-    ], { duration: event.duration || 500, easing: 'cubic-bezier(0.22, 1, 0.36, 1)', fill: 'none' });
+      { opacity: 1, transform: 'translate(-50%, 12px)', offset: 0.16 },
+      { opacity: 1, transform: 'translate(-50%, 3px)', offset: 0.6 },
+      { opacity: 0, transform: 'translate(-50%, 0)' },
+    ], { duration: event.duration || 500, delay: event.delay || 0, easing: 'cubic-bezier(0.22, 1, 0.36, 1)', fill: 'none' });
     return () => animation.cancel();
-  }, [event?.id, event?.amount, event?.duration, reduced]);
+  }, [event?.id, event?.amount, event?.duration, event?.delay, reduced]);
 
   return <span className="score-feedback" role="group" aria-label={`Puntos: ${value}`}>
-    <span className="score-feedback__visual" aria-hidden="true">{displayed}</span>
+    <span className="score-feedback__visual" aria-hidden="true">{!event || reduced ? value : displayed}</span>
     <b className="visually-hidden" data-testid="score">{value}</b>
-    {event?.amount > 0 && <span ref={floatRef} className={`score-feedback__gain ${event.color === 'delivery' ? 'is-delivery' : 'is-step'}`} aria-hidden="true">+{event.amount}</span>}
+    {event?.amount > 0 && <span ref={floatRef} hidden={hiddenGainId === event.id} className={`score-feedback__gain ${event.color === 'delivery' ? 'is-delivery' : 'is-step'}`} aria-hidden="true">+{event.amount}</span>}
   </span>;
 }
 
 export function StepStreakIndicator({ value = 0, event = null }) {
-  const milestone = event?.type === 'increment' && event.milestone && event.value === value;
+  const reduced = useReducedMotion();
+  const [arrivedId, setArrivedId] = useState(null);
+  useEffect(() => {
+    if (!event?.id || reduced || event.type !== 'increment') return undefined;
+    const timer = setTimeout(() => setArrivedId(event.id), event.delay || 0);
+    return () => clearTimeout(timer);
+  }, [event?.id, event?.type, event?.delay, reduced]);
+  const displayed = !reduced && event?.type === 'increment' && arrivedId !== event.id ? event.beforeValue ?? Math.max(0, value - 1) : value;
+  const incrementing = event?.type === 'increment' && event.value === displayed;
+  const milestone = incrementing && event.milestone;
   const resetting = event?.type === 'reset' && value === 0;
   const eventId = event?.id || 'idle';
-  return <span className={`step-streak-indicator ${milestone ? 'is-milestone' : ''} ${resetting ? 'is-reset' : ''}`} aria-label={`${value} reducciones correctas consecutivas`} data-testid="step-streak">
+  return <span className={`step-streak-indicator ${incrementing ? 'is-increment' : ''} ${milestone ? 'is-milestone' : ''} ${resetting ? 'is-reset' : ''}`} aria-label={`${value} reducciones correctas consecutivas`} data-testid="step-streak">
     <span className="step-streak-indicator__label">Racha de pasos</span>
-    <b key={`count-${eventId}`} className="step-streak-indicator__count">{value}</b>
-    <span className="streak-segments" aria-hidden="true">{Array.from({ length: 10 }, (_, index) => <i key={index} className={`streak-segment ${index < Math.min(value, 10) ? 'is-filled' : ''} ${event?.type === 'increment' && index === value - 1 ? 'is-new' : ''}`} />)}</span>
+    <b key={`count-${eventId}`} className="step-streak-indicator__count" aria-hidden="true">{displayed}<small> pasos</small></b>
+    <span className="streak-segments" aria-hidden="true">{Array.from({ length: 10 }, (_, index) => <i key={index} className={`streak-segment ${index < Math.min(displayed, 10) ? 'is-filled' : ''} ${incrementing && index === displayed - 1 ? 'is-new' : ''}`} />)}</span>
     {milestone && <span key={`rays-${eventId}`} className="streak-milestone-rays" aria-hidden="true"><i /><i /><i /><i /></span>}
   </span>;
 }
@@ -94,14 +97,21 @@ function particlesFor(id = '') {
   });
 }
 
-export function CompletionPresentation({ event, compact = false }) {
-  const reduced = useReducedMotion();
+export function CompletionPresentation({ event, compact = false, animated = Boolean(event?.id) }) {
+  const preferenceReduced = useReducedMotion();
+  const reduced = preferenceReduced || event?.motionDisabled === true;
   const contentRef = useRef(null), checkRef = useRef(null), circleRef = useRef(null);
   const repeat = event?.repeat === true;
+  const [expiredParticlesId, setExpiredParticlesId] = useState(null);
+  useEffect(() => {
+    if (!animated || !event?.id) return undefined;
+    const timer = setTimeout(() => setExpiredParticlesId(event.id), 700);
+    return () => clearTimeout(timer);
+  }, [event?.id, animated]);
   const equivalent = event?.equivalent && event?.settings ? formatExact(event.equivalent, event.settings) : '—';
   const errors = Math.max(0, event?.errors || 0);
   useEffect(() => {
-    if (!event?.id || repeat || reduced || typeof Element === 'undefined') return undefined;
+    if (!event?.id || !animated || repeat || reduced || typeof Element === 'undefined') return undefined;
     const animations = [];
     const content = contentRef.current, check = checkRef.current, circle = circleRef.current;
     if (content?.animate) animations.push(content.animate(
@@ -116,8 +126,9 @@ export function CompletionPresentation({ event, compact = false }) {
       [{ transform: 'scale(0.96)' }, { transform: 'scale(1.03)', offset: 0.52 }, { transform: 'scale(1)' }],
       { duration: 180, delay: 120, easing: 'cubic-bezier(0.22, 1, 0.36, 1)', fill: 'both' },
     ));
+    animations.forEach(animation => { animation.onfinish = () => animation.cancel(); });
     return () => animations.forEach(animation => animation.cancel());
-  }, [event?.id, repeat, reduced]);
+  }, [event?.id, animated, repeat, reduced]);
 
   return <div ref={contentRef} className={`completion-presentation ${compact ? 'is-compact' : ''} ${repeat ? 'is-repeat' : ''} ${reduced ? 'is-static' : ''}`} data-testid="completion">
     <span className="completion-mark" aria-hidden="true">
@@ -127,14 +138,17 @@ export function CompletionPresentation({ event, compact = false }) {
       {!repeat && <><span className="completion-copy__detail">Equivalente: {equivalent} · {errors} {errors === 1 ? 'error' : 'errores'}</span>
         <span className="completion-copy__reward">Puntos de pasos: +{event?.stepPoints || 0} · entrega: +{event?.rewardPoints || 0} · total: +{(event?.stepPoints || 0) + (event?.rewardPoints || 0)}</span></>}
     </span>
-    {!repeat && !reduced && <span className="completion-particles" aria-hidden="true">{particlesFor(event?.id).map((particle, index) => <i key={index} className={`completion-particle ${particle.kind} ${particle.color}`} style={{ '--particle-x': `${particle.x}px`, '--particle-y': `${particle.y}px`, '--particle-rotate': `${particle.rotate}deg`, '--particle-delay': `${180 + index * 3}ms` }} />)}</span>}
+    {!repeat && !reduced && expiredParticlesId !== event?.id && animated && <span className="completion-particles" aria-hidden="true">{particlesFor(event?.id).map((particle, index) => <i key={index} className={`completion-particle ${particle.kind} ${particle.color}`} style={{ '--particle-x': `${particle.x}px`, '--particle-y': `${particle.y}px`, '--particle-rotate': `${particle.rotate}deg` }} />)}</span>}
   </div>;
 }
 
+const subscribeFullscreen = callback => { document.addEventListener('fullscreenchange', callback); return () => document.removeEventListener('fullscreenchange', callback); };
+const fullscreenSnapshot = () => document.fullscreenElement;
 export function ExamCompletionToast({ event }) {
+  const fullscreenElement = useSyncExternalStore(subscribeFullscreen, fullscreenSnapshot, () => null);
   if (!event || event.source !== 'exam') return null;
-  return <aside className="exam-completion-toast" role="status" aria-live="polite" aria-atomic="true" key={event.id}>
+  return createPortal(<aside className={`exam-completion-toast ${event.motionDisabled ? 'is-static' : ''}`} role="status" aria-live="polite" aria-atomic="true" key={event.id}>
     <CompletionPresentation event={event} compact />
     {!event.repeat && <span className="exam-toast-progress">Racha de pasos: {event.stepStreak} · Pasos +{event.stepPoints} · Entrega +{event.rewardPoints}</span>}
-  </aside>;
+  </aside>, fullscreenElement || document.body);
 }

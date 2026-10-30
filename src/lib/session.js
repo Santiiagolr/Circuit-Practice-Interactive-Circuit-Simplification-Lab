@@ -47,7 +47,9 @@ function commit(state, ids, rule, now) {
     bestStepStreak: Math.max(state.progress.bestStepStreak, state.progress.stepStreak + 1),
   } : state.progress;
   const next = record(state, { kind: 'reduction', rule, components: result.selected.map(edge => ({ id: edge.id, label: edge.label, value: edge.value })), equivalent: result.equivalent && { label: result.equivalent.label, value: result.equivalent.value } }, now);
-  return { ...next, progress, current: { ...next.current, exercise: result.exercise, past: [...next.current.past, state.current.exercise], future: [], selected: [], pending: null, stepRewardFloor: nextFloor, earnedStepPoints: state.current.earnedStepPoints + stepPoints, notice: { kind: 'success', message: isComplete(result.exercise) ? 'Circuito reducido. Revisá el resultado y entregá cuando estés listo.' : rule === 'delete' ? 'Interruptor abierto eliminado; ramas desconectadas podadas.' : 'Reducción confirmada.' } } };
+  const confirmation = isComplete(result.exercise) ? 'Circuito reducido. Revisá el resultado y entregá cuando estés listo.' : rule === 'delete' ? 'Interruptor abierto eliminado; ramas desconectadas podadas.' : 'Reducción confirmada.';
+  const message = stepPoints ? `${confirmation} +${stepPoints} ${stepPoints === 1 ? 'punto' : 'puntos'} por pasos. Racha: ${progress.stepStreak} ${progress.stepStreak === 1 ? 'reducción correcta' : 'reducciones correctas'}.` : confirmation;
+  return { ...next, progress, current: { ...next.current, exercise: result.exercise, past: [...next.current.past, state.current.exercise], future: [], selected: [], pending: null, stepRewardFloor: nextFloor, earnedStepPoints: state.current.earnedStepPoints + stepPoints, notice: { kind: 'success', message } } };
 }
 function resultRecord(state, now, status, reward = null) {
   const { exercise, attempts, startedAt } = state.current;
@@ -248,7 +250,7 @@ function validHistoricalExercise(exercise) {
   return !exercise || Boolean(exercise && Array.isArray(exercise.edges) && exercise.edges.length > 0 && exercise.edges.length <= 30 && exercise.edges.every(edge => edge && validStoredValue(edge.value)));
 }
 function validHistoryItem(item) {
-  return Boolean(item && typeof item.id === 'string' && ['complete', 'incomplete', 'abandoned'].includes(item.status) && (item.topicId == null || TOPICS.some(topic => topic.id === item.topicId)) && (item.repeat == null || typeof item.repeat === 'boolean') && (item.stepPoints == null || Number.isSafeInteger(item.stepPoints) && item.stepPoints >= 0) && ['steps', 'errors', 'undos', 'elapsed'].every(key => Number.isFinite(item[key]) && item[key] >= 0) && Array.isArray(item.attempts) && item.attempts.length <= 1000 && item.attempts.every(validAttempt) && (item.settings == null || typeof item.settings === 'object') && validHistoricalExercise(item.initial) && validHistoricalExercise(item.final) && (item.reward == null || Number.isFinite(item.reward.points) && item.reward.points >= 0));
+  return Boolean(item && typeof item.id === 'string' && ['complete', 'incomplete', 'abandoned'].includes(item.status) && (item.topicId == null || TOPICS.some(topic => topic.id === item.topicId)) && (item.repeat == null || typeof item.repeat === 'boolean') && (!Object.hasOwn(item, 'stepPoints') || Number.isSafeInteger(item.stepPoints) && item.stepPoints >= 0) && ['steps', 'errors', 'undos', 'elapsed'].every(key => Number.isFinite(item[key]) && item[key] >= 0) && Array.isArray(item.attempts) && item.attempts.length <= 1000 && item.attempts.every(validAttempt) && (item.settings == null || typeof item.settings === 'object') && validHistoricalExercise(item.initial) && validHistoricalExercise(item.final) && (item.reward == null || Number.isFinite(item.reward.points) && item.reward.points >= 0));
 }
 function validSession(saved) {
   if (!saved || saved.version !== 2 || !validExercise(saved.current?.exercise)) return false;
@@ -256,8 +258,9 @@ function validSession(saved) {
   if (!Array.isArray(current.past) || current.past.length > 30 || !current.past.every(validExercise) || !Array.isArray(current.future) || current.future.length > 30 || !current.future.every(validExercise)) return false;
   if (!Array.isArray(current.attempts) || current.attempts.length > 1000 || !current.attempts.every(validAttempt) || !Array.isArray(current.selected) || new Set(current.selected).size !== current.selected.length || current.selected.some(id => !edgeIds.has(id))) return false;
   if (!Number.isFinite(current.startedAt) || typeof current.submitted !== 'boolean' || current.notice != null && (typeof current.notice.message !== 'string' || typeof current.notice.kind !== 'string')) return false;
-  if (current.stepRewardFloor != null && (!Number.isSafeInteger(current.stepRewardFloor) || current.stepRewardFloor < 1 || current.stepRewardFloor > 30)) return false;
-  if (current.earnedStepPoints != null && (!Number.isSafeInteger(current.earnedStepPoints) || current.earnedStepPoints < 0)) return false;
+  if (Object.hasOwn(current, 'stepRewardFloor') && (!Number.isSafeInteger(current.stepRewardFloor) || current.stepRewardFloor < 1 || current.stepRewardFloor > current.exercise.edges.length)) return false;
+  if (Object.hasOwn(current, 'earnedStepPoints') && (!Number.isSafeInteger(current.earnedStepPoints) || current.earnedStepPoints < 0)) return false;
+  if (['stepStreak', 'bestStepStreak'].some(key => saved.progress && Object.hasOwn(saved.progress, key) && (!Number.isSafeInteger(saved.progress[key]) || saved.progress[key] < 0))) return false;
   if (current.pending != null && (!Array.isArray(current.pending.ids) || current.pending.ids.length < 2 || current.pending.ids.some(id => !edgeIds.has(id)) || !['series', 'parallel'].includes(current.pending.rule) || current.pending.revision !== current.exercise.revision || !validStoredValue(current.pending.value))) return false;
   if (current.pending != null) {
     if (!saved.settings?.manual) return false;
@@ -293,6 +296,8 @@ export function loadSession({ storage, qa, now = Date.now() } = {}) {
         saved.current.rewardEligible ??= true;
         saved.current.stepRewardFloor ??= saved.current.exercise.edges.length;
         saved.current.earnedStepPoints ??= 0;
+        saved.history.forEach(item => { item.stepPoints ??= 0; });
+        saved.exam?.results.forEach(item => { item.stepPoints ??= 0; });
         saved.topicProgress = { ...createTopicProgress(), ...(saved.topicProgress || {}) }; saved.topicSession ??= null;
         return { state: sessionReducer(saved, { type: 'tick', now }), warning };
       }

@@ -136,11 +136,40 @@ it('does not restore the reward floor on undo or redo and preserves earned point
   expect(s.progress.score).toBe(score);
   expect(s.current.stepRewardFloor).toBe(floor);
   expect(s.current.earnedStepPoints).toBe(score);
+  const streak = s.progress.stepStreak;
+  s = act(s, 'undo');
+  s = move(s);
+  expect(s.progress.score).toBe(score);
+  expect(s.progress.stepStreak).toBe(streak);
   saveSession(s, saved);
   s = loadSession({ storage: saved, now: 2000 }).state;
   expect(s.progress.score).toBe(score);
   expect(s.current.earnedStepPoints).toBe(score);
   expect(s.current.stepRewardFloor).toBe(floor);
+});
+
+it('does not reward open-switch pruning and lowers the reward floor to its resulting component count', () => {
+  let s = createSession({ seed: 2, settings: { difficulty: 'challenge' }, progress: { stepStreak: 4 }, now: 0 });
+  const open = s.current.exercise.edges.find(edge => edge.switchState === 'open');
+  expect(open).toBeTruthy();
+  s = act(s, 'select', { id: open.id });
+  s = act(s, 'reduce', { rule: 'delete' });
+  expect(s.progress).toMatchObject({ score: 0, stepStreak: 4 });
+  expect(s.current.stepRewardFloor).toBe(s.current.exercise.edges.length);
+  expect(s.current.earnedStepPoints).toBe(0);
+});
+
+it('rejects invalid optional step-reward fields while preserving separately saved progress', () => {
+  for (const [area, field, value] of [['current', 'stepRewardFloor', 0], ['current', 'earnedStepPoints', -1], ['progress', 'stepStreak', 'bad'], ['progress', 'bestStepStreak', null]]) {
+    const db = storage(), state = createSession({ seed: 812, progress: { score: 70 }, now: 0 });
+    saveSession(state, db);
+    const saved = JSON.parse(db.getItem(SESSION_KEY));
+    saved[area][field] = value;
+    db.setItem(SESSION_KEY, JSON.stringify(saved));
+    const loaded = loadSession({ storage: db, now: 1000 });
+    expect(loaded.warning).toBeTruthy();
+    expect(loaded.state.progress.score).toBe(70);
+  }
 });
 
 it('keeps earned points after a mistake and isolates both streaks during a no-points repeat', () => {

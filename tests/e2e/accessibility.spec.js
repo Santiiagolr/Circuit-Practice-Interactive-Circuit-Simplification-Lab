@@ -1,6 +1,6 @@
 import AxeBuilder from '@axe-core/playwright';
 import { expect, test } from '@playwright/test';
-import { captureRuntimeErrors, expectNoHorizontalDocumentOverflow, findManualMove, performManualMove } from './helpers';
+import { captureRuntimeErrors, expectNoHorizontalDocumentOverflow, findManualMove, performManualMove, solveVisibleCircuit } from './helpers';
 
 test('initial exercise and keyboard controls have no serious accessibility violations', async ({ page }, testInfo) => {
   test.skip(!['chromium', 'firefox', 'webkit'].includes(testInfo.project.name));
@@ -62,4 +62,19 @@ test('fullscreen and result are named and the completed circuit remains reviewab
   const audit = await new AxeBuilder({ page }).analyze();
   expect(audit.violations.filter(item => ['critical', 'serious'].includes(item.impact))).toEqual([]);
   await expect(page.getByRole('button', { name: 'Entregar resultado' })).toBeVisible();
+});
+
+test('step rewards and delivered results remain accessible with reduced motion', async ({ page }) => {
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  await page.goto('/?seed=814&type=L&difficulty=guided');
+  await solveVisibleCircuit(page);
+  await expect(page.getByRole('button', { name: 'Entregar resultado' })).toBeFocused();
+  await page.getByRole('button', { name: 'Entregar resultado' }).click();
+  await expect(page.getByTestId('completion')).toContainText('¡Circuito resuelto!');
+  await expect(page.locator('.completion-particle')).toHaveCount(0);
+  const audit = await new AxeBuilder({ page }).analyze();
+  expect(audit.violations.filter(item => ['critical', 'serious'].includes(item.impact))).toEqual([]);
+  await page.getByRole('button', { name: 'Usar tema oscuro' }).click();
+  const dark = await new AxeBuilder({ page }).analyze();
+  expect(dark.violations.filter(item => ['critical', 'serious'].includes(item.impact))).toEqual([]);
 });

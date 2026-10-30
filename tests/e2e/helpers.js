@@ -13,8 +13,8 @@ export async function expectNoHorizontalDocumentOverflow(page) {
 }
 export async function visibleLabelOverlaps(page) {
   return page.locator('svg[data-testid="circuit"]').evaluate(svg => {
-    const labels = [...svg.querySelectorAll('.component-id, .component-value')].filter(item => getComputedStyle(item).display !== 'none');
-    const symbols = [...svg.querySelectorAll('.electrical-symbol')];
+    const labels = [...svg.querySelectorAll('.circuit-component .component-id, .circuit-component .component-value')].filter(item => getComputedStyle(item).display !== 'none');
+    const symbols = [...svg.querySelectorAll('.circuit-component .electrical-symbol')];
     const intersects = (a, b) => a.left < b.right - 1 && a.right > b.left + 1 && a.top < b.bottom - 1 && a.bottom > b.top + 1;
     const overlaps = [];
     for (let i = 0; i < labels.length; i++) {

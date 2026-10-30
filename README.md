@@ -142,7 +142,11 @@ Firefox is available as a separate project. On this Windows host, its Playwright
 6. In Training, optionally request a hint or review a formula after reducing. In an exam, review is available after submission.
 7. Continue until one equivalent remains, then deliver the exercise to record its reward. Delivered circuits remain available in History for verified replay or a no-reward repeat.
 
-Correctly delivered exercises build a streak and award difficulty-based points plus the existing streak bonus. An incorrect electrical or numeric answer resets the active streak; hints, undo/redo, and interface-only issues do not. Progress and in-progress mock exams are saved locally when browser storage is available.
+Each newly simplified component earns 1/2/3 points at Basic/Intermediate/Advanced difficulty. Grouping several components gives the same total as reducing them in pairs. Earned points survive mistakes, undo and abandonment; a persisted minimum component count prevents earning them twice through undo/redo. Removing an open switch gives no points. Delivery adds the existing 10/20/35 points and clean-circuit streak bonus.
+
+The workbench shows a separate streak of rewarded reductions; Progress shows both step and circuit streaks and their records. An evaluated error resets both current streaks. Minis never award points or increase the step streak, and no-reward repeats do not change points or either streak even on errors. History separates step, delivery and total points. Existing version-2 sessions load without retroactive rewards.
+
+Four silent effects confirm reductions (320 ms), points (500 ms), step-streak milestones (400 ms) and delivery (700 ms of movement). They use the actual SVG geometry, remain interruptible, respect live reduced-motion preferences, and also work during exam auto-next. Animation events are never persisted. Progress and in-progress mock exams are saved locally when browser storage is available.
 
 The interface does not apply reductions on its own. Every operation requires an explicit user selection and passes through the corresponding validation.
 
@@ -307,7 +311,11 @@ npm run test:visual -- --update-snapshots
 5. En Entrenamiento podés pedir una pista y revisar la fórmula después de reducir. En el parcial, la revisión queda disponible al entregar.
 6. Continuá hasta dejar un equivalente y entregá el ejercicio para registrar los puntos.
 
-Los ejercicios entregados correctamente construyen una racha y suman puntos según dificultad, más el bonus vigente. Una respuesta eléctrica o numérica incorrecta corta la racha; las pistas, deshacer/rehacer y los problemas puramente de interfaz no. El progreso y los parciales en curso se guardan localmente si el navegador permite almacenamiento.
+Cada componente eliminado mediante avance nuevo da 1/2/3 puntos en Básica/Intermedia/Avanzada. La multiselección entrega el mismo total que reducir por parejas. Los puntos ganados se conservan ante errores, deshacer y abandono; un mínimo persistente de componentes impide cobrarlos otra vez. Eliminar un abierto no da puntos. La entrega suma los 10/20/35 puntos y el bonus vigente por circuitos consecutivos sin errores.
+
+La mesa muestra la racha de pasos recompensados. Progreso distingue ambas rachas y sus mejores marcas, y el historial separa puntos de pasos, entrega y total. Un error evaluado corta ambas rachas actuales. Los minis no dan puntos ni aumentan la racha de pasos. Las repeticiones sin puntos tampoco alteran ninguna racha ante errores. Las sesiones versión 2 anteriores se recuperan sin premios retroactivos.
+
+Cuatro efectos silenciosos confirman reducción (320 ms), puntos (500 ms), hitos de racha (400 ms) y entrega (700 ms de movimiento). Reutilizan la geometría SVG real, admiten interrupciones y movimiento reducido en vivo, y funcionan durante el avance automático del parcial. Los eventos visuales no se guardan. El progreso y los parciales en curso se guardan localmente si el navegador permite almacenamiento.
 
 La interfaz no aplica reducciones por su cuenta: cada operación requiere una selección explícita del usuario y pasa por la validación correspondiente.
 

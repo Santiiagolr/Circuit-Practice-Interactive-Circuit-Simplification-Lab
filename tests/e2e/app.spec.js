@@ -234,8 +234,9 @@ test('physical touch controls complete an exercise on mobile without horizontal 
     const box = await button.boundingBox(); expect(box.width).toBeGreaterThanOrEqual(44); expect(box.height).toBeGreaterThanOrEqual(44);
   }
   await solveVisibleCircuit(page, true);
+  const stepScore = Number(await page.getByTestId('score').textContent());
   await page.getByRole('button', { name: 'Entregar resultado' }).click();
-  await expect(page.getByTestId('score')).toHaveText('10');
+  await expect(page.getByTestId('score')).toHaveText(String(stepScore + 10));
   expect(errors).toEqual([]);
 });
 
@@ -265,8 +266,9 @@ test('a three-question exam records one delivery and leaves a review', async ({ 
   await page.getByLabel('Ejercicios del parcial').selectOption('3');
   await page.getByRole('button', { name: 'Comenzar parcial' }).click();
   await solveVisibleCircuit(page);
+  const stepScore = Number(await page.getByTestId('score').textContent());
   await page.getByRole('button', { name: 'Entregar y continuar' }).click();
-  await expect(page.getByTestId('score')).toHaveText('10');
+  await expect(page.getByTestId('score')).toHaveText(String(stepScore + 10));
   page.on('dialog', dialog => dialog.accept());
   await page.getByRole('button', { name: 'Finalizar parcial' }).click();
   await expect(page.getByRole('heading', { name: 'Parcial cerrado' })).toBeVisible();
@@ -279,7 +281,7 @@ test('completes every component and difficulty combination through the visible c
   test.setTimeout(120_000);
   const errors = captureRuntimeErrors(page);
   let seed = 920;
-  for (const type of ['R', 'C']) for (const difficulty of ['guided', 'practice', 'challenge']) {
+  for (const type of ['R', 'C', 'L']) for (const difficulty of ['guided', 'practice', 'challenge']) {
     await page.goto(`/?seed=${seed++}&difficulty=${difficulty}&type=${type}`);
     await solveVisibleCircuit(page);
     await expect(page.getByRole('region', { name: 'Circuito reducido' })).toBeVisible();
