@@ -59,6 +59,9 @@ test('fullscreen and result are named and the completed circuit remains reviewab
   }
   const result = page.getByRole('region', { name: 'Circuito reducido' });
   await expect(result).toContainText('Equivalente');
+  // Audit the stable result after the prescribed decorative +N opacity fade.
+  // Canonical points and the consolidated announcement remain visible throughout.
+  await expect(page.locator('.score-feedback__gain')).toHaveCount(0);
   const audit = await new AxeBuilder({ page }).analyze();
   expect(audit.violations.filter(item => ['critical', 'serious'].includes(item.impact))).toEqual([]);
   await expect(page.getByRole('button', { name: 'Entregar resultado' })).toBeVisible();

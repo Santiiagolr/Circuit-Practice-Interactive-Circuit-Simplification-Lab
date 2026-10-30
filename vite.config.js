@@ -13,6 +13,9 @@ export default defineConfig({
     clearMocks: true,
   },
   server: {
+    watch: {
+      ignored: ['**/test-results/**', '**/playwright-report/**', '**/output/playwright/**'],
+    },
     host: '0.0.0.0',
     allowedHosts: true, // Allow all hosts (like localhost.run)
     strictPort: false

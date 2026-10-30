@@ -54,7 +54,7 @@
 .step-streak-indicator {
   position: relative;
   display: grid;
-  grid-template-columns: auto auto;
+  grid-template-columns: auto minmax(0, 1fr);
   align-items: center;
   gap: 2px 6px;
   min-width: 102px;
@@ -90,7 +90,8 @@
 .streak-segments {
   display: flex;
   gap: 2px;
-  width: 55px;
+  width: 100%;
+  max-width: 55px;
   height: 6px;
   align-items: center;
 }
@@ -486,14 +487,19 @@
 }
 
 @media (max-width:700px) {
-  .step-streak-indicator {
-    min-width: 94px;
+  .telemetry > .step-streak-indicator {
+    flex: 1.7;
+    min-width: 110px;
+    padding-inline: 6px;
+  }
+  .telemetry .step-streak-indicator__count {
+    margin-left: 0;
   }
   .step-streak-indicator__label {
     font-size: 10px;
   }
   .streak-segments {
-    width: 48px;
+    max-width: 48px;
   }
   .completion-particle:nth-child(n+7) {
     display: none;
