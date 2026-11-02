@@ -21,7 +21,7 @@ La referencia inicial de Chromium tenía dos diferencias previas: Temas todavía
 | Progreso | Actividad principal y recompensas desplegables. Minis/circuitos/repeticiones separados; contadores derivados del historial identificados. Los parciales no se cuentan como práctica libre. |
 | Historial | Filtros por componente/modalidad/estado y páginas de 20 sin recorte. Regresión de 202 entradas verifica agregado y recuperación. Resumen, intentos y replay con fórmula del paso se abren por separado. |
 | Compatibilidad | Campo `pending.text` opcional y validado (hasta 500 caracteres), sin cambio de versión ni eventos de animación persistidos. Los adaptadores antiguos permanecen cubiertos por unitarias y humo. |
-| Accesibilidad | Foco circular en diálogos, Escape y retorno al disparador en Chromium/WebKit; contraste de atajos corregido; teclado sin acciones sobre vistas ocultas. Axe, movimiento reducido y reflow equivalente a 200% se prueban por separado. |
+| Accesibilidad | Foco circular en diálogos, Escape y retorno al disparador en Chromium/WebKit; contraste de atajos corregido; teclado sin acciones sobre vistas ocultas. Axe, movimiento reducido, reflow y zoom nativo a 200% se prueban por separado. |
 
 ## Revisión independiente y correcciones
 
@@ -39,8 +39,45 @@ Capturas reproducibles y hojas de revisión: `output/playwright/refinement/` y `
 
 ## Resultados finales
 
-Pendientes de consolidar al terminar los procesos de la matriz completa y generación. Los registros completos están en `.superpowers/refinement/` (artefactos locales ignorados por Git).
+| Comprobación | Resultado |
+| --- | --- |
+| Lint y compilación de producción | Aprobados |
+| Unitarias (`vitest run --maxWorkers=2`) | 204 aprobadas, 16 archivos |
+| Humo de generadores/adaptadores | Aprobado; 245 firmas básicas, 283 avanzadas y 25 eliminaciones de abierto |
+| Campaña R/C/L | 36.000 circuitos y 580.782 estados; dos órdenes de reducción por circuito; sin fallos |
+| E2E general, siete perfiles | 156 aprobadas, 40 omisiones por alcance; sin fallos |
+| Firefox separado | 11 aprobadas, 5 omisiones por alcance; sin fallos |
+| Regresión visual final | 9 aprobadas, 15 omisiones por alcance; sin diferencias pendientes |
+| Axe y foco, Chromium/WebKit | 7 aprobadas, 3 omisiones por alcance; sin violaciones graves o críticas |
+| Launcher Windows | Aprobado: rutas con espacios, dependencias, puertos y limpieza de procesos |
+| Lighthouse final | Rendimiento 99, accesibilidad 100; supera 85/95 |
+| Revisión independiente | Tres hallazgos corregidos y cubiertos por regresiones |
+| Zoom nativo de Chromium al 200% | Aprobado: cinco vistas, dos temas y entrega manual; sin desbordamiento horizontal |
+
+Los registros completos están en `.superpowers/refinement/` (artefactos locales ignorados por Git). La implementación comprobada está presente en `db96a81`; el informe se consolidó después de ese commit existente. No quedan procesos de pruebas automáticas ejecutándose.
+
+El último ajuste visual se inspeccionó por separado: un desplazamiento de 1.196 píxeles en la región de la barra fija de iPhone, provocado por el margen de scroll seguro. Se revisó la comparación anterior/actual y se aceptó solo esa referencia; la ejecución visual completa posterior aprobó los nueve casos.
 
 ## Límites de la evidencia
 
-Pixel, iPhone, tablet y teléfono horizontal son perfiles emulados de Playwright, no dispositivos físicos. La prueba de zoom valida reflow equivalente a 200% (viewport CSS de 640 px respecto de una ventana de 1280 px); no certifica los menús o preferencias de zoom de cada navegador del usuario. El almacenamiento local depende de disponibilidad/cuota: ante fallo la aplicación informa que no puede guardar, sin descartar registros para ocultarlo.
+Pixel, iPhone, tablet y teléfono horizontal son perfiles emulados de Playwright, no dispositivos físicos. La prueba de zoom valida reflow equivalente a 200% (viewport CSS de 640 px respecto de una ventana de 1280 px); esa prueba se complementa con el zoom nativo real verificado por `nativeZoom.spec.js`. No se modificó el perfil personal del usuario. El almacenamiento local depende de disponibilidad/cuota: ante fallo la aplicación informa que no puede guardar, sin descartar registros para ocultarlo.
+
+
+## Verificación del zoom nativo real
+
+`npm run test:native-zoom` ejecuta una prueba aislada de Chromium completo (no el headless shell). Crea dos perfiles sintéticos de prueba, con el zoom nativo predeterminado a 100% y 200%, antes de cargar la aplicación. Se utiliza la [preferencia nativa de Chromium](https://github.com/chromium/chromium/blob/main/chrome/browser/ui/zoom/chrome_zoom_level_prefs.cc) y la [conversión oficial entre nivel y factor](https://github.com/chromium/chromium/blob/main/third_party/blink/common/page/page_zoom.cc); la propia prueba comprueba su efecto para evitar aceptar una preferencia ignorada.
+
+| Medida observada | 100% | 200% |
+| --- | --- | --- |
+| Ancho exterior de ventana | 1280 | 1280 |
+| Ancho disponible en CSS | 1258 | 629 |
+| Alto disponible en CSS | 802 | 401 |
+| devicePixelRatio | 1 | 2 |
+| Escala pinch | 1 | 1 |
+| Zoom CSS | 1 | 1 |
+
+La ventana mantiene su ancho exterior, el zoom del navegador duplica su escala y reduce a la mitad el viewport CSS. No se altera el zoom CSS, la escala pinch ni se aplica una emulación de viewport. La prueba recorre las cinco vistas en ambos temas, comprueba que el documento no desborda horizontalmente y resuelve/entrega un circuito mediante los controles visibles. Resultado: **1 aprobada**.
+
+Las once capturas nativas se inspeccionaron en `output/playwright/native-zoom/`, junto con `native-zoom-metrics.json`. Se captura la superficie nativa sin recorte CSS, porque una captura fullPage con zoom nativo puede recortar la mitad derecha de la imagen. Los perfiles son exclusivos de la prueba, se guardan en el directorio de resultados y sus navegadores se cierran al terminar. La automatización no utiliza las ventanas personales de Chrome ni necesita el control nativo que había quedado bloqueado.
+
+Con esta comprobación se cierra el último requisito pendiente del plan. Las limitaciones de dispositivos físicos y disponibilidad de almacenamiento indicadas arriba siguen delimitando la evidencia.

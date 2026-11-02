@@ -57,3 +57,5 @@ El modo reproducible solo se activa al ejecutar `npm run dev:qa`; acepta `seed`,
 - La sesión sigue en versión 2. `current.pending.text` es opcional, admite hasta 500 caracteres y preserva la respuesta al navegar o recargar. Las sesiones anteriores siguen siendo válidas. Los ajustes visuales pueden cambiar durante un parcial sin regenerarlo.
 - Ayuda conserva atajos y manejo de la mesa; durante un parcial omite las explicaciones conceptuales de serie/paralelo. Los diálogos usan la modalidad nativa y restauran foco.
 - El alcance y la matriz de aceptación están en `docs/REFINAMIENTO_INTEGRAL.md`. La evidencia actual se registra en `docs/QA_REFINAMIENTO.md`; las cifras históricas de DEBUG_REPORT no prueban el estado actual.
+
+El cierre del refinamiento incluye `npm run test:native-zoom`: prueba el zoom nativo real al 200% en perfiles sintéticos de Chromium, sin modificar el perfil personal. La evidencia y las medidas comparativas 100%/200% están en `docs/QA_REFINAMIENTO.md`.

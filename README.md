@@ -111,6 +111,7 @@ On Windows, starting the launcher, `npm run dev`, or `npm run preview` creates o
 | `npm run test:e2e` | Runs browser flows on Chromium, Edge, WebKit, Android, iPhone, tablet, and mobile landscape. |
 | `npm run test:e2e:firefox` | Runs the same flow on Playwright Firefox. |
 | `npm run test:visual` | Compares desktop, tablet, iPhone portrait, and phone landscape screenshots, including interaction states. |
+| `npm run test:native-zoom` | Verifies native 200% browser zoom with isolated Chromium profiles, both themes and manual delivery. |
 | `npm run test:a11y` | Runs axe-core and keyboard/focus checks. |
 | `npm run test:lighthouse` | Enforces mobile performance ≥85 and accessibility ≥95. |
 | `npm run test:launcher` | Tests the Windows launcher, port fallback, paths with spaces, and cleanup. |
@@ -282,6 +283,7 @@ En Windows, al iniciar el launcher, `npm run dev` o `npm run preview`, se crea o
 | `npm run test:e2e` | Prueba Chromium, Edge, WebKit, Android, iPhone, tablet y móvil horizontal. |
 | `npm run test:e2e:firefox` | Ejecuta por separado la matriz de Firefox. |
 | `npm run test:visual` | Verifica capturas de escritorio, tablet, iPhone vertical y teléfono horizontal, incluidos estados de interacción. |
+| `npm run test:native-zoom` | Verifica zoom nativo al 200% en perfiles aislados de Chromium, ambos temas y entrega manual. |
 | `npm run test:a11y` | Ejecuta axe-core y pruebas de teclado/foco. |
 | `npm run test:lighthouse` | Exige rendimiento móvil ≥85 y accesibilidad ≥95. |
 | `npm run test:launcher` | Prueba rutas con espacios, dependencias faltantes, puertos y cierre del launcher. |
