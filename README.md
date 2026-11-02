@@ -61,7 +61,7 @@ The challenge ends when the network is manually reduced to one equivalent compon
 
 ### Requirements
 
-- Node.js 18 or newer.
+- Node.js 20.19+ or 22.12+ (matching the installed Vite runtime).
 - npm 9 or newer.
 
 ### Installation
@@ -107,7 +107,7 @@ On Windows, starting the launcher, `npm run dev`, or `npm run preview` creates o
 | `npm run lint` | Runs Oxlint on the project. |
 | `npm run test:unit` | Runs physics, topology, state, persistence, SVG, and component tests. |
 | `npm run test:circuits` | Runs deterministic generation, solvability, diversity, and switch-deletion smoke tests. |
-| `npm run test:stress` | Generates 24,000 circuits (1,000 per type/level/representation/value combination) and validates two reduction orders against an independent evaluator. |
+| `npm run test:stress` | Generates 36,000 circuits (1,000 per type/level/representation/value combination) and validates two reduction orders against an independent evaluator. |
 | `npm run test:e2e` | Runs browser flows on Chromium, Edge, WebKit, Android, iPhone, tablet, and mobile landscape. |
 | `npm run test:e2e:firefox` | Runs the same flow on Playwright Firefox. |
 | `npm run test:visual` | Compares desktop, tablet, iPhone portrait, and phone landscape screenshots, including interaction states. |
@@ -130,7 +130,7 @@ Supported values are `training|exam`, `R|C|L`, `guided|practice|challenge`, and 
 npm run test:visual -- --update-snapshots
 ```
 
-Firefox is available as a separate project. On this Windows host, its Playwright binary currently fails to start with `spawn UNKNOWN` before the application loads; the run is recorded in `DEBUG_REPORT.md`.
+Firefox is available as a separate project. The 2026-11-02 rerun passed 11 applicable application flows (5 project-specific skips). The earlier `spawn UNKNOWN` startup failure remains recorded as historical evidence in `DEBUG_REPORT.md`.
 
 ### How to play
 
@@ -246,7 +246,7 @@ El desafío termina cuando la red se reduce manualmente a un único componente e
 
 ### Requisitos e instalación
 
-- Node.js 18 o superior.
+- Node.js 20.19+ o 22.12+ (según el runtime de Vite instalado).
 - npm 9 o superior.
 
 ```bash
@@ -278,7 +278,7 @@ En Windows, al iniciar el launcher, `npm run dev` o `npm run preview`, se crea o
 | `npm run lint` | Ejecuta Oxlint sobre el proyecto. |
 | `npm run test:unit` | Prueba física, topología, estado, persistencia, SVG y componentes React. |
 | `npm run test:circuits` | Ejecuta smoke tests deterministas de generación, reducibilidad, variedad y eliminación de interruptores. |
-| `npm run test:stress` | Genera 24.000 circuitos (1.000 por tipo/nivel/representación/valores) y compara dos órdenes de reducción con un evaluador independiente. |
+| `npm run test:stress` | Genera 36.000 circuitos (1.000 por tipo/nivel/representación/valores) y compara dos órdenes de reducción con un evaluador independiente. |
 | `npm run test:e2e` | Prueba Chromium, Edge, WebKit, Android, iPhone, tablet y móvil horizontal. |
 | `npm run test:e2e:firefox` | Ejecuta por separado la matriz de Firefox. |
 | `npm run test:visual` | Verifica capturas de escritorio, tablet, iPhone vertical y teléfono horizontal, incluidos estados de interacción. |
@@ -356,3 +356,15 @@ El build genera la carpeta `dist/`, que está excluida del control de versiones 
 ### Licencia
 
 Este proyecto se distribuye bajo la [Licencia MIT](LICENSE).
+
+## Refinamiento de la mesa de laboratorio
+
+La navegación ofrece Práctica libre, Por temas, Parcial, Progreso e Historial. Podés consultar tu actividad y volver al ejercicio sin perder la selección ni el cálculo pendiente. Si hay un parcial activo, el reloj sigue corriendo.
+
+En **Configurar práctica**, las opciones de ejercicio se editan juntas y se confirman con **Aplicar y comenzar**. **Cancelar cambios** conserva la configuración actual. Los símbolos, el flujo ilustrativo y el tema se aplican inmediatamente. Si una acción reemplaza una práctica con trabajo registrado, el programa permite continuarla o confirmar el abandono; los puntos ya obtenidos se conservan.
+
+**Concentración** da más espacio al circuito y se puede combinar con pantalla completa. **Componentes** pliega o despliega la lista sincronizada. En teléfonos, Serie y Paralelo están al pie de la pantalla; la barra se aparta mientras ingresás un valor. **Ayuda** reúne el manejo y los atajos.
+
+El historial ofrece filtros por componente, modalidad y estado, con 20 registros por página. Cada registro permite revisar intentos y recorrer los pasos verificados. Repetir un ejercicio no concede puntos adicionales. Progreso distingue actividad y recompensas, y marca los conteos limitados a los registros del historial.
+
+El plan y la evidencia de verificación se encuentran en [Refinamiento integral](docs/REFINAMIENTO_INTEGRAL.md) y [QA del refinamiento](docs/QA_REFINAMIENTO.md).

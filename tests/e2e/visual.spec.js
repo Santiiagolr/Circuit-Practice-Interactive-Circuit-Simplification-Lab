@@ -5,7 +5,9 @@ test('responsive full-circuit overview baseline', async ({ page }, testInfo) => 
   test.skip(!['chromium', 'tablet', 'iphone-13', 'mobile-landscape'].includes(testInfo.project.name));
   await page.goto('/?seed=2026&difficulty=challenge&type=R&values=varied');
   await page.evaluate(() => document.fonts.ready);
-  await expect(page.locator('.workbench')).toHaveScreenshot(`workbench-${testInfo.project.name}.png`, { animations: 'disabled', maxDiffPixelRatio: 0.002 });
+  // Align the portrait bench above the fixed footer before capturing its feedback.
+  if (testInfo.project.name === 'iphone-13') await page.locator('.workbench').evaluate(node => node.scrollIntoView({ block: 'start' }));
+  await expect.soft(page.locator('.workbench')).toHaveScreenshot(`workbench-${testInfo.project.name}.png`, { animations: 'disabled', maxDiffPixelRatio: 0.002 });
 });
 
 test('light and dark themes cover the complete ultrawide application shell', async ({ page }, testInfo) => {
@@ -13,19 +15,19 @@ test('light and dark themes cover the complete ultrawide application shell', asy
   await page.setViewportSize({ width: 2560, height: 1440 });
   await page.goto('/?seed=2026&difficulty=guided&type=C');
   await page.evaluate(() => document.fonts.ready);
-  await expect(page).toHaveScreenshot('app-light-ultrawide.png', { fullPage: true, animations: 'disabled', maxDiffPixelRatio: 0.002 });
+  await expect.soft(page).toHaveScreenshot('app-light-ultrawide.png', { fullPage: true, animations: 'disabled', maxDiffPixelRatio: 0.002 });
   await page.getByRole('button', { name: 'Usar tema oscuro' }).click();
   await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark');
-  await expect(page).toHaveScreenshot('app-dark-ultrawide.png', { fullPage: true, animations: 'disabled', maxDiffPixelRatio: 0.002 });
+  await expect.soft(page).toHaveScreenshot('app-dark-ultrawide.png', { fullPage: true, animations: 'disabled', maxDiffPixelRatio: 0.002 });
 });
 
 test('topic overview and focused mini exercise remain readable', async ({ page }, testInfo) => {
   test.skip(testInfo.project.name !== 'chromium');
   await page.goto('/?seed=829&type=C');
   await page.getByRole('button', { name: 'Por temas' }).click();
-  await expect(page.locator('.topics-page')).toHaveScreenshot('topics-overview.png', { animations: 'disabled', maxDiffPixelRatio: 0.002 });
+  await expect.soft(page.locator('.topics-page')).toHaveScreenshot('topics-overview.png', { animations: 'disabled', maxDiffPixelRatio: 0.002 });
   await page.getByRole('button', { name: 'Empezar tema' }).nth(3).click();
-  await expect(page.locator('.mini-card')).toHaveScreenshot('topic-mini-exercise.png', { animations: 'disabled', maxDiffPixelRatio: 0.002 });
+  await expect.soft(page.locator('.mini-card')).toHaveScreenshot('topic-mini-exercise.png', { animations: 'disabled', maxDiffPixelRatio: 0.002 });
 });
 
 test('all six geometric families keep their symbols, labels, and routes legible', async ({ page }, testInfo) => {
@@ -45,7 +47,7 @@ test('all six geometric families keep their symbols, labels, and routes legible'
       const rotations = await page.locator('[data-component-id] > g').evaluateAll(nodes => nodes.map(node => Number(node.getAttribute('transform')?.match(/rotate\((-?[\d.]+)/)?.[1] ?? 0)));
       expect(rotations.some(angle => Math.abs(angle - Math.round(angle / 90) * 90) > 1)).toBe(true);
     }
-    await expect(page.locator('.drawing-area')).toHaveScreenshot(`${snapshot}.png`, { animations: 'disabled', maxDiffPixelRatio: 0.002 });
+    await expect.soft(page.locator('.drawing-area')).toHaveScreenshot(`${snapshot}.png`, { animations: 'disabled', maxDiffPixelRatio: 0.002 });
     expect(await visibleLabelOverlaps(page)).toEqual([]);
   }
 });
@@ -56,15 +58,15 @@ test('selection, topology warning, equivalent and inline result remain legible',
   await page.goto('/?seed=817&difficulty=challenge&type=R');
   const move = await findManualMove(page);
   await selectComponents(page, move.ids);
-  await expect(page.locator('.workbench')).toHaveScreenshot('workbench-selected.png', { animations: 'disabled', maxDiffPixelRatio: 0.002 });
+  await expect.soft(page.locator('.workbench')).toHaveScreenshot('workbench-selected.png', { animations: 'disabled', maxDiffPixelRatio: 0.002 });
   await page.keyboard.press(move.rule === 'series' ? 'e' : 'q');
   await expect(page.locator('.feedback-strip.error')).toBeVisible();
-  await expect(page.locator('.workbench')).toHaveScreenshot('workbench-error.png', { animations: 'disabled', maxDiffPixelRatio: 0.002 });
+  await expect.soft(page.locator('.workbench')).toHaveScreenshot('workbench-error.png', { animations: 'disabled', maxDiffPixelRatio: 0.002 });
   await page.keyboard.press(move.rule === 'series' ? 'q' : 'e');
-  await expect(page.locator('.workbench')).toHaveScreenshot('workbench-equivalent.png', { animations: 'disabled', maxDiffPixelRatio: 0.002 });
+  await expect.soft(page.locator('.workbench')).toHaveScreenshot('workbench-equivalent.png', { animations: 'disabled', maxDiffPixelRatio: 0.002 });
   await solveVisibleCircuit(page);
   await expect(page.getByRole('region', { name: 'Circuito reducido' })).toBeVisible();
-  await expect(page.locator('.workbench')).toHaveScreenshot('workbench-result.png', { animations: 'disabled', maxDiffPixelRatio: 0.002 });
+  await expect.soft(page.locator('.workbench')).toHaveScreenshot('workbench-result.png', { animations: 'disabled', maxDiffPixelRatio: 0.002 });
   expect(errors).toEqual([]);
 });
 
@@ -73,5 +75,5 @@ test('an open switch stays distinct in the full-circuit overview', async ({ page
   await page.goto('/?seed=2&difficulty=challenge&type=R');
   const openSwitch = page.locator('svg [data-component-id][aria-label*="Interruptor"][aria-label*="Abierto"]').first();
   if (!await openSwitch.count()) test.skip(true, 'This deterministic topology does not include an open switch.');
-  await expect(page.locator('.workbench')).toHaveScreenshot('workbench-open-switch.png', { animations: 'disabled', maxDiffPixelRatio: 0.002 });
+  await expect.soft(page.locator('.workbench')).toHaveScreenshot('workbench-open-switch.png', { animations: 'disabled', maxDiffPixelRatio: 0.002 });
 });

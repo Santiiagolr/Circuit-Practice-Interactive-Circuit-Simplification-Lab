@@ -59,7 +59,7 @@ export function ScoreFeedback({ value, event = null }) {
   </span>;
 }
 
-export function StepStreakIndicator({ value = 0, event = null }) {
+export function StepStreakIndicator({ value = 0, event = null, compact = false }) {
   const reduced = useReducedMotion();
   const [arrivedId, setArrivedId] = useState(null);
   useEffect(() => {
@@ -73,7 +73,7 @@ export function StepStreakIndicator({ value = 0, event = null }) {
   const resetting = event?.type === 'reset' && value === 0;
   const eventId = event?.id || 'idle';
   return <span className={`step-streak-indicator ${incrementing ? 'is-increment' : ''} ${milestone ? 'is-milestone' : ''} ${resetting ? 'is-reset' : ''}`} aria-label={`${value} reducciones correctas consecutivas`} data-testid="step-streak">
-    <span className="step-streak-indicator__label">Racha de pasos</span>
+    <span className="step-streak-indicator__label">{compact ? 'Racha' : 'Racha de pasos'}</span>
     <b key={`count-${eventId}`} className="step-streak-indicator__count" aria-hidden="true">{displayed}<small> pasos</small></b>
     <span className="streak-segments" aria-hidden="true">{Array.from({ length: 10 }, (_, index) => <i key={index} className={`streak-segment ${index < Math.min(displayed, 10) ? 'is-filled' : ''} ${incrementing && index === displayed - 1 ? 'is-new' : ''}`} />)}</span>
     {milestone && <span key={`rays-${eventId}`} className="streak-milestone-rays" aria-hidden="true"><i /><i /><i /><i /></span>}

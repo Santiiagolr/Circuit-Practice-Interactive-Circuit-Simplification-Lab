@@ -1,0 +1,7 @@
+export default function PracticeHelp({ activeExam = false }) {
+  return <div className="practice-help">
+    <p>Seleccioná componentes en el dibujo o en la lista. Reconocé sus nodos y elegí la operación: cada reducción requiere tu decisión.</p>
+    <dl><dt>Serie <kbd>Q</kbd> · Paralelo <kbd>E</kbd></dt><dd>{activeExam ? 'Seleccioná los componentes y usá el botón o el atajo de la operación que elegiste.' : 'En serie, los componentes comparten un nodo intermedio sin derivaciones. En paralelo, las ramas comparten ambos nodos extremos.'}</dd><dt>Interruptor abierto</dt><dd>Seleccionalo y usá Eliminar abierto para retirar la rama interrumpida.</dd><dt>Revisar pasos</dt><dd><kbd>Ctrl/Cmd + Z</kbd> deshace; <kbd>Ctrl/Cmd + Mayús + Z</kbd> rehace. Los intentos y errores quedan registrados.</dd><dt>Ver el circuito</dt><dd>Usá + y − para ampliar, arrastrá el dibujo ampliado y elegí Ajustar para recuperar la vista completa. La lista conserva todos los nombres y valores.</dd><dt>Entregar</dt><dd>Al llegar a un único equivalente, revisalo y entregá el resultado. Deshacer antes de entregar permite comprobar el procedimiento.</dd><dt>Puntos y rachas</dt><dd>Los pasos nuevos y la entrega suman puntos. Una respuesta evaluada incorrecta reinicia las rachas. Los minis no suman puntos y las repeticiones no cambian puntos ni rachas.</dd></dl>
+    <p>El flujo es ilustrativo. Los inductores son ideales, sin acoplamiento ni simulación de transitorios. Durante el parcial, las pistas y las fórmulas de revisión se reservan para el final.</p>
+  </div>;
+}

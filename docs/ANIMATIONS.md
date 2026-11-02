@@ -66,3 +66,11 @@ La entrega local incluye `circuit-practice-animations.webm`, su conversión `cir
 ## Estado del checkout
 
 Durante el trabajo, el checkout recibió desde otra ejecución los commits `3e9366e` y `4233e6f`. Se conservó su contenido. Esta ejecución no emitió comandos de commit, push, merge ni publicación; los ajustes finales de estilo móvil, captura y entorno de QA permanecen como cambios locales junto con esta documentación.
+
+## Navegación y refinamiento de la mesa
+
+La mesa conserva el SVG, la selección y el zoom al consultar Progreso o Historial. Los atajos de reducción quedan inactivos fuera de la mesa visible y durante los diálogos. Navegar cancela los efectos transitorios; volver no reproduce recompensas.
+
+Concentración oculta los indicadores accesorios y conserva las acciones, los pasos y los fallos. El panel plegable puede cambiar la escala medida del SVG, que cancela la transición geométrica en curso sin alterar el circuito. Pantalla completa usa el mismo criterio.
+
+Las referencias visuales se revisan por estado y dispositivo antes de aceptar cambios. La entrada manual persistida pertenece a la sesión; los eventos de animación siguen siendo efímeros y nunca se guardan.

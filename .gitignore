@@ -48,3 +48,6 @@ desktop.ini
 *.ntvs*
 *.njsproj
 *.sw?
+
+# Local refinement execution ledger and diagnostic logs
+.superpowers/refinement/

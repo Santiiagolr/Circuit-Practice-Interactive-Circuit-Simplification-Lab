@@ -1,76 +1,87 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
-import TechnicalCircuit from './components/TechnicalCircuit.jsx';
+import { Moon, Sun } from 'lucide-react';
 import PracticeSettings from './components/PracticeSettings.jsx';
-import PracticeHistory, { ReductionExplanation } from './components/PracticeHistory.jsx';
+import PracticeHistory from './components/PracticeHistory.jsx';
 import TopicPractice from './components/TopicPractice.jsx';
 import ProgressPage from './components/ProgressPage.jsx';
-import { isComplete, LEVELS } from './lib/exercise.js';
-import { TOPICS } from './lib/topicPractice.js';
+import AppNavigation from './components/AppNavigation.jsx';
+import AppDialog from './components/AppDialog.jsx';
+import PracticeHelp from './components/PracticeHelp.jsx';
+import Workbench from './components/Workbench.jsx';
+import { ExamCompletionToast } from './components/GameAnimations.jsx';
 import { getQaConfig } from './lib/qaConfig.js';
 import { loadSession, saveSession } from './lib/session.js';
 import { useAnimatedSession } from './lib/useAnimatedSession.js';
-import { CompletionPresentation, ExamCompletionToast, ScoreFeedback, StepStreakIndicator } from './components/GameAnimations.jsx';
 import { getReductionAction } from './lib/keyboardShortcuts.js';
-import { Moon, Sun } from 'lucide-react';
-import { formatExact, unitForType } from './lib/values.js';
+import { isComplete, LEVELS } from './lib/exercise.js';
 import './App.css';
 import './theme.css';
+import './refinement.css';
 import './animations.css';
 
 function initialize() { return loadSession({ qa: getQaConfig() }); }
-function ArithmeticEntry({ pending, settings, notice, dispatch }) {
-  const [answer, setAnswer] = useState('');
-  return <form className="arithmetic-entry" onSubmit={event => { event.preventDefault(); dispatch({ type: 'answer', text: answer }); }} aria-label="Calcular equivalente">
-    <label htmlFor="equivalent-answer">Equivalente en {settings.representation === 'symbolic' ? settings.compType : unitForType(settings)} ({pending.rule === 'series' ? 'serie' : 'paralelo'})</label>
-    <div className="answer-row"><input id="equivalent-answer" autoFocus value={answer} onChange={event => setAnswer(event.target.value)} placeholder={settings.representation === 'symbolic' ? `3/2${settings.compType}` : 'Ej.: 12,5 o 25/2'} autoComplete="off" spellCheck="false" aria-describedby="answer-help" /><button className="primary" type="submit">Confirmar valor</button><button type="button" onClick={() => dispatch({ type: 'clear' })}>Cancelar</button></div>
-    <p id="answer-help">Acepta fracciones, decimales y notación científica. {settings.representation === 'numeric' ? 'Redondeá a tres cifras significativas. Sin unidad, se usa la indicada.' : 'Ingresá un múltiplo exacto de la base.'} También podés escribir “cable” o “abierto”.</p>
-    {notice && <p className={notice.kind === 'error' ? 'error-text' : ''} role="status">{notice.message}</p>}
-  </form>;
-}
-
 export default function App() {
   const [loaded] = useState(initialize);
   const [state, dispatch, feedback, clearFeedback] = useAnimatedSession(loaded.state);
   const [storageWarning, setStorageWarning] = useState(loaded.warning);
-  const [fullscreen, setFullscreen] = useState(false), [nativeFullscreen, setNativeFullscreen] = useState(false);
-  const [showHistory, setShowHistory] = useState(false), [now, setNow] = useState(Date.now);
+  const [concentration, setConcentration] = useState(false);
+  const [dialog, setDialog] = useState(null);
+  const [now, setNow] = useState(Date.now);
   const [activeView, setActiveView] = useState(() => loaded.state.topicSession?.phase === 'mini' ? 'topics' : loaded.state.settings.mode === 'exam' ? 'exam' : 'bench');
-  const restoreCircuitFocus = useRef(false);
-  const desk = useRef(null), fullscreenButton = useRef(null);
-  const navigate = useCallback(view => { clearFeedback(); setActiveView(view); }, [clearFeedback]);
+  const desk = useRef(null), app = useRef(null), restoreCircuitFocus = useRef(false), previousView = useRef(activeView);
   const { settings, current, progress, exam, topicSession, topicProgress } = state;
-  const { exercise } = current;
-  const complete = isComplete(exercise), activeExam = exam?.status === 'active';
-  const locked = current.submitted || (settings.mode === 'exam' && !activeExam);
-  const mistakes = current.attempts.filter(item => item.kind === 'error').length;
-  const steps = current.attempts.filter(item => item.kind === 'reduction').length;
-  const lastStep = current.attempts.findLast(item => item.kind === 'reduction');
-  const submittedItem = current.submitted ? state.history.findLast(item => item.id === exercise.id && item.status === 'complete') : null;
-  const liveCompletion = feedback.completion?.exerciseId === exercise.id && feedback.completion.source === 'workbench' ? feedback.completion : null;
-  const completion = liveCompletion || (submittedItem && { settings: submittedItem.settings || settings, equivalent: submittedItem.final?.edges?.[0]?.value || exercise.edges[0].value, errors: submittedItem.errors, repeat: submittedItem.repeat, stepPoints: submittedItem.stepPoints || 0, rewardPoints: submittedItem.reward?.points || 0 });
+  const activeExam = exam?.status === 'active';
+  const showWorkbench = activeView === 'bench' || (activeView === 'exam' && activeExam);
+  const remaining = exam?.deadline ? Math.max(0, Math.ceil((exam.deadline - now) / 1000)) : null;
+  const navigate = useCallback(view => { clearFeedback(); setConcentration(false); setActiveView(view); }, [clearFeedback]);
+  const exerciseView = settings.mode === 'exam' ? 'exam' : topicSession?.phase === 'mini' ? 'topics' : 'bench';
+  const resume = () => navigate(exerciseView);
+  const unfinished = topicSession?.phase === 'mini'
+    ? topicSession.answered || topicSession.minisInCycle > 0
+    : !current.submitted && (Boolean(current.pending) || current.attempts.some(item => item.kind !== 'configuration'));
+  const requestChange = run => {
+    if (activeExam) return false;
+    if (unfinished) {
+      setDialog({ title: '¿Dejar esta práctica?', run, message: 'El ejercicio actual quedará registrado como práctica cambiada. Los puntos ya obtenidos se conservan. Podés cancelar para seguir donde estabas.' });
+      return false;
+    }
+    run(); return true;
+  };
+  function changeSettings(next) {
+    if (Object.keys(next).every(key => ['theme', 'flow', 'resistorStyle', 'inductorStyle'].includes(key))) { dispatch({ type: 'settings', settings: next }); return true; }
+    return requestChange(() => {
+      dispatch({ type: 'settings', settings: next });
+      if (next.mode) navigate(next.mode === 'exam' ? 'exam' : 'bench');
+    });
+  }
+  function openView(view) {
+    if (activeExam && ['bench', 'topics'].includes(view)) return;
+    if (view === 'bench' && (topicSession || settings.mode === 'exam' || settings.topicTopology)) {
+      requestChange(() => { dispatch({ type: 'settings', settings: { mode: 'training', focusRule: null, topicTopology: null } }); navigate('bench'); });
+    } else if (view === 'exam' && !activeExam && settings.mode !== 'exam') {
+      requestChange(() => { dispatch({ type: 'settings', settings: { mode: 'exam', focusRule: null, topicTopology: null } }); navigate('exam'); });
+    } else navigate(view);
+  }
   useEffect(() => {
-    const saved = () => setStorageWarning('El navegador no permite guardar la sesión. Podés seguir practicando, pero se perderá al cerrar esta página.');
-    window.addEventListener('circuit-storage-error', saved);
-    return () => window.removeEventListener('circuit-storage-error', saved);
-  }, []);
-  useEffect(() => { if (!saveSession(state)) window.dispatchEvent(new Event('circuit-storage-error')); }, [state]);
+    const failed = () => setStorageWarning('El navegador no permite guardar la sesión. Podés seguir practicando, pero se perderá al cerrar esta página.');
+    window.addEventListener('circuit-storage-error', failed);
+    if (!saveSession(state)) window.dispatchEvent(new Event('circuit-storage-error'));
+    return () => window.removeEventListener('circuit-storage-error', failed);
+  }, [state]);
   useEffect(() => {
     if (!activeExam || !exam.deadline) return;
-    const tick = () => { const timestamp = Date.now(); setNow(timestamp); dispatch({ type: 'tick', now: timestamp }); };
+    const tick = () => {
+      const timestamp = Date.now(); setNow(timestamp); dispatch({ type: 'tick', now: timestamp });
+      if (timestamp >= exam.deadline) setDialog(previous => previous?.exam ? null : previous);
+    };
     const timer = window.setInterval(tick, 1000);
     document.addEventListener('visibilitychange', tick);
     return () => { clearInterval(timer); document.removeEventListener('visibilitychange', tick); };
   }, [activeExam, exam?.deadline, dispatch]);
   useEffect(() => {
     const onKey = event => {
-      if (event.defaultPrevented || event.repeat || event.altKey || event.target.closest?.('input, textarea, select, [contenteditable="true"]')) return;
-      if (event.key === 'Escape') {
-        event.preventDefault();
-        if (document.fullscreenElement) document.exitFullscreen().catch(() => setFullscreen(false));
-        setFullscreen(false);
-        dispatch({ type: 'clear' });
-        return;
-      }
+      if (!showWorkbench || dialog || event.defaultPrevented || event.repeat || event.altKey || event.target.closest?.('input, textarea, select, [contenteditable="true"]')) return;
+      if (event.key === 'Escape') { dispatch({ type: 'clear' }); return; }
       if (event.ctrlKey || event.metaKey) {
         const key = event.key.toLowerCase();
         if (key === 'z' || key === 'y') { event.preventDefault(); restoreCircuitFocus.current = true; dispatch({ type: key === 'y' || event.shiftKey ? 'redo' : 'undo' }); }
@@ -81,82 +92,47 @@ export default function App() {
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [dispatch]);
+  }, [showWorkbench, dialog, dispatch]);
   useEffect(() => {
-    if (!restoreCircuitFocus.current) return;
+    if (!restoreCircuitFocus.current || !showWorkbench) return;
     restoreCircuitFocus.current = false;
-    desk.current?.querySelector(complete ? '.result-strip button' : '[data-component-id][aria-disabled="false"]')?.focus();
-  }, [exercise.revision, complete]);
+    desk.current?.querySelector(current.pending ? '#equivalent-answer' : isComplete(current.exercise) ? '.result-strip button' : '[data-component-id][aria-disabled="false"]')?.focus({ preventScroll: true });
+  }, [current.exercise.revision, current.pending, showWorkbench, current.exercise]);
   useEffect(() => {
-    const change = () => { const enabled = document.fullscreenElement === desk.current; setNativeFullscreen(enabled); setFullscreen(enabled); if (!enabled) fullscreenButton.current?.focus(); };
-    document.addEventListener('fullscreenchange', change);
-    return () => document.removeEventListener('fullscreenchange', change);
-  }, []);
-  useEffect(() => {
-    if (!fullscreen) return;
-    const previous = document.body.style.overflow; document.body.style.overflow = 'hidden';
-    return () => { document.body.style.overflow = previous; };
-  }, [fullscreen]);
-  async function toggleFullscreen() {
-    if (fullscreen) { if (document.fullscreenElement) await document.exitFullscreen().catch(() => {}); setFullscreen(false); fullscreenButton.current?.focus(); return; }
-    setFullscreen(true);
-    try { await desk.current.requestFullscreen(); } catch { setNativeFullscreen(false); }
-  }
-  const select = useCallback(id => dispatch({ type: 'select', id }), [dispatch]);
-  const clear = useCallback(() => dispatch({ type: 'clear' }), [dispatch]);
-  const remaining = exam?.deadline ? Math.max(0, Math.ceil((exam.deadline - now) / 1000)) : null;
-  const feedbackState = current.notice?.kind || (complete ? 'success' : current.selected.length ? 'selection' : 'guide');
-  const feedbackMessage = current.notice?.message || (complete
-    ? 'Circuito reducido. Revisá el resultado y entregalo cuando estés listo.'
-    : current.selected.length === 0
-      ? 'Seleccioná dos o más componentes para comenzar.'
-      : current.selected.length === 1
-        ? 'Elegí al menos otro componente y decidí qué regla corresponde.'
-        : 'Compará las conexiones y elegí Serie o Paralelo para aplicar tu razonamiento.');
-  const activeTopic = TOPICS.find(topic => topic.id === topicSession?.topicId);
-  const showWorkbench = activeView === 'bench' || (activeView === 'exam' && activeExam);
-  const openFreePractice = () => {
-    if (topicSession || settings.mode === 'exam' || settings.topicTopology) dispatch({ type: 'settings', settings: { mode: 'training', focusRule: null, topicTopology: null } });
-    navigate('bench');
-  };
-  const openExam = () => {
-    if (settings.mode !== 'exam' || topicSession || settings.topicTopology) dispatch({ type: 'settings', settings: { mode: 'exam', focusRule: null, topicTopology: null } });
-    navigate('exam');
-  };
+    if (previousView.current === activeView) return;
+    previousView.current = activeView;
+    const heading = showWorkbench ? desk.current?.querySelector('#equivalent-answer, h2') : app.current?.querySelector('.view-content h2');
+    if (heading) { heading.setAttribute('tabindex', '-1'); heading.focus({ preventScroll: true }); }
+  }, [activeView, showWorkbench]);
   useLayoutEffect(() => {
     const theme = settings.theme === 'dark' ? 'dark' : 'light';
     const root = document.documentElement;
-    root.classList.add('theme-colors-instant');
-    root.dataset.theme = theme;
-    root.style.colorScheme = theme;
+    root.classList.add('theme-colors-instant'); root.dataset.theme = theme; root.style.colorScheme = theme;
     document.querySelector('meta[name="theme-color"]')?.setAttribute('content', theme === 'dark' ? '#0B1422' : '#F3F7FC');
     let secondFrame = 0;
-    const firstFrame = requestAnimationFrame(() => {
-      secondFrame = requestAnimationFrame(() => root.classList.remove('theme-colors-instant'));
-    });
-    return () => {
-      cancelAnimationFrame(firstFrame);
-      cancelAnimationFrame(secondFrame);
-      root.classList.remove('theme-colors-instant');
-    };
+    const firstFrame = requestAnimationFrame(() => { secondFrame = requestAnimationFrame(() => root.classList.remove('theme-colors-instant')); });
+    return () => { cancelAnimationFrame(firstFrame); cancelAnimationFrame(secondFrame); root.classList.remove('theme-colors-instant'); };
   }, [settings.theme]);
-  return <main className="practice-app" data-theme={settings.theme}>
-    <header className="app-header"><div className="app-identity"><svg viewBox="0 0 44 28" aria-hidden="true"><path d="M 1 14 H 10 L 14 5 L 20 23 L 26 5 L 32 23 L 36 14 H 43" /></svg><div><h1>Circuit Practice</h1><p>Práctica de parciales</p></div></div><div className="header-actions"><button aria-pressed={settings.theme === 'dark'} aria-label={settings.theme === 'dark' ? 'Usar tema claro' : 'Usar tema oscuro'} onClick={() => dispatch({ type: 'settings', settings: { theme: settings.theme === 'dark' ? 'light' : 'dark' } })}>{settings.theme === 'dark' ? <Sun size={17} aria-hidden="true" /> : <Moon size={17} aria-hidden="true" />}<span>{settings.theme === 'dark' ? 'Claro' : 'Oscuro'}</span></button><button aria-expanded={showHistory} onClick={() => setShowHistory(value => !value)}>{showHistory ? 'Cerrar historial' : 'Historial'}</button></div></header>
-    <nav className="app-nav" aria-label="Secciones principales"><button aria-current={activeView === 'bench' ? 'page' : undefined} disabled={activeExam} onClick={openFreePractice}>Práctica libre</button><button aria-current={activeView === 'topics' ? 'page' : undefined} disabled={activeExam} onClick={() => navigate('topics')}>Por temas</button><button aria-current={activeView === 'exam' ? 'page' : undefined} onClick={openExam}>Parcial</button><button aria-current={activeView === 'progress' ? 'page' : undefined} onClick={() => navigate('progress')}>Progreso</button></nav>
-    {(activeView === 'bench' || activeView === 'exam') && <PracticeSettings settings={settings} activeExam={activeExam || Boolean(topicSession)} onChange={next => { dispatch({ type: 'settings', settings: next }); if (next.mode) navigate(next.mode === 'exam' ? 'exam' : 'bench'); }} />}
+
+  return <main ref={app} className={`practice-app ${concentration && showWorkbench ? 'is-concentrating' : ''}`} data-theme={settings.theme}>
+    <header className="app-header"><div className="app-identity"><svg viewBox="0 0 44 28" aria-hidden="true"><path d="M 1 14 H 10 L 14 5 L 20 23 L 26 5 L 32 23 L 36 14 H 43" /></svg><div><h1>Circuit Practice</h1><p>Práctica de parciales</p></div></div><div className="header-actions"><button aria-pressed={settings.theme === 'dark'} aria-label={settings.theme === 'dark' ? 'Usar tema claro' : 'Usar tema oscuro'} onClick={() => changeSettings({ theme: settings.theme === 'dark' ? 'light' : 'dark' })}>{settings.theme === 'dark' ? <Sun size={17} aria-hidden="true" /> : <Moon size={17} aria-hidden="true" />}<span>{settings.theme === 'dark' ? 'Claro' : 'Oscuro'}</span></button><button onClick={event => { event.currentTarget.focus({ preventScroll: true }); setDialog({ title: 'Cómo practicar', help: true }); }}>Ayuda</button></div></header>
+    <AppNavigation activeView={activeView} activeExam={activeExam} onNavigate={openView} />
+    {activeExam && <p className="exam-nav-note">El parcial sigue en curso. El reloj continúa al consultar Progreso o Historial.</p>}
+    {!showWorkbench && activeView !== exerciseView && <div className="resume-bar"><span>{activeExam ? `Parcial en curso${remaining !== null ? ` · ${Math.floor(remaining / 60)}:${String(remaining % 60).padStart(2, '0')}` : ''}` : settings.mode === 'exam' ? 'La configuración y la revisión de tu parcial se conservan.' : topicSession ? 'Tu práctica por tema se conserva.' : 'Tu ejercicio se conserva.'}</span><button onClick={resume}>Volver al ejercicio</button></div>}
+    <div hidden={activeView !== 'bench' && activeView !== 'exam'} className="settings-container"><PracticeSettings settings={settings} activeExam={activeExam} topicActive={Boolean(topicSession)} onChange={changeSettings} /></div>
     {storageWarning && <p role="status" className="storage-warning">{storageWarning}</p>}
-    {activeView === 'topics' && <TopicPractice settings={settings} topicSession={topicSession} topicProgress={topicProgress || {}} onStart={topicId => { dispatch({ type: 'start-topic', topicId }); navigate('topics'); }} onAnswer={answer => dispatch({ type: 'topic-answer', answer })} onContinue={() => { const startsCircuit = topicSession?.minisInCycle >= 2; dispatch({ type: 'continue-topic' }); if (startsCircuit) navigate('bench'); }} onExit={() => dispatch({ type: 'exit-topic' })} onDifficultyChange={difficulty => dispatch({ type: 'settings', settings: { difficulty } })} onTopologyChange={topicTopology => dispatch({ type: 'settings', settings: { topicTopology } })} onStyleChange={inductorStyle => dispatch({ type: 'settings', settings: { inductorStyle } })} onViewCircuit={() => navigate('bench')} />}
-    {activeView === 'progress' && <ProgressPage progress={progress} topicProgress={topicProgress || {}} history={state.history} />}
-    {activeView === 'exam' && settings.mode === 'exam' && !activeExam && <section className="exam-summary" aria-label="Simulacro de parcial"><div><h2>{exam?.status === 'finished' ? exam.expired ? 'Parcial cerrado' : 'Parcial entregado' : 'Prepará tu parcial'}</h2><p>{exam?.status === 'finished' ? `${exam.results.filter(item => item.status === 'complete').length} de ${exam.count} ejercicios completos. Revisá los pasos y errores al pie de la página.` : `${settings.examCount} ejercicios · ${settings.examMinutes ? settings.examMinutes + ' minutos' : 'Sin límite de tiempo'} · Sin pistas ni fórmulas durante la sesión.`}</p></div><button className="primary" onClick={() => dispatch({ type: 'start-exam' })}>{exam?.status === 'finished' ? 'Comenzar otro parcial' : 'Comenzar parcial'}</button></section>}
-    {showWorkbench && <><section ref={desk} className={`workbench ${fullscreen ? 'desk-fullscreen' : ''} ${fullscreen && !nativeFullscreen ? 'css-fullscreen' : ''}`} aria-label="Mesa de trabajo">
-      <header className="desk-header"><div className="exercise-heading"><h2>{activeExam ? `Parcial · ${exam.results.length + 1}/${exam.count}` : activeTopic ? `Tema · ${activeTopic.shortTitle}` : 'Entrenamiento'} <span>/ {LEVELS[settings.difficulty].label}</span></h2><p>{settings.compType === 'R' ? 'Resistencias' : settings.compType === 'C' ? 'Capacitores' : 'Inductores ideales sin acoplamiento'} · {exercise.family}{settings.compType === 'L' ? ' · No se simula la evolución temporal' : ''}</p></div><div className="telemetry" aria-label="Progreso"><span>Pasos <b data-testid="steps">{steps}</b></span><span>Fallos <b>{mistakes}</b></span><span className="telemetry-score">Puntos <ScoreFeedback value={progress.score} event={feedback.score} /></span><StepStreakIndicator value={progress.stepStreak} event={feedback.streak} /><span className="source-state">Fuente <b>12 V</b></span>{remaining !== null && activeExam && <span aria-label="Tiempo restante" className="exam-clock">{Math.floor(remaining / 60)}:{String(remaining % 60).padStart(2, '0')}</span>}</div><button ref={fullscreenButton} onClick={toggleFullscreen} aria-label={fullscreen ? 'Salir de pantalla completa' : 'Pantalla completa'}>{fullscreen ? 'Salir ⤡' : 'Ampliar ⤢'}</button></header>
-      <div className="action-bar" role="group" aria-label="Acciones del circuito"><div className="reduction-actions"><button className="primary" onClick={() => dispatch({ type: 'reduce', rule: 'series' })} disabled={locked || complete || current.selected.length < 2 || !!current.pending}>Serie <kbd>Q</kbd></button><button className="primary" onClick={() => dispatch({ type: 'reduce', rule: 'parallel' })} disabled={locked || complete || current.selected.length < 2 || !!current.pending}>Paralelo <kbd>E</kbd></button>{current.selected.some(id => exercise.edges.find(edge => edge.id === id)?.switchState === 'open') && <button onClick={() => dispatch({ type: 'reduce', rule: 'delete' })} disabled={locked}>Eliminar abierto</button>}<span className="selection-count">{current.selected.length} seleccionados</span></div><div className="secondary-actions"><button onClick={() => dispatch({ type: 'undo' })} disabled={locked || !current.past.length} title="Ctrl/Cmd + Z">Deshacer</button><button onClick={() => dispatch({ type: 'redo' })} disabled={locked || !current.future.length} title="Ctrl/Cmd + Mayús + Z">Rehacer</button>{activeExam ? <button onClick={() => { if (window.confirm('¿Cerrar el parcial? Los ejercicios sin entregar quedarán incompletos.')) dispatch({ type: 'finish-exam' }); }}>Finalizar parcial</button> : <button onClick={() => dispatch({ type: 'new' })}>Nuevo circuito</button>}</div></div>
-      <div className="desk-content"><TechnicalCircuit key={exercise.id} exercise={exercise} settings={settings} reductionEvent={feedback.geometry} selected={current.selected} onSelect={select} onClear={clear} disabled={locked || complete || !!current.pending} /><aside className="component-panel" aria-label="Selección de componentes"><div className="panel-heading"><h3>Componentes <span>{exercise.edges.length}</span></h3><button onClick={clear} disabled={!current.selected.length}>Limpiar</button></div><div className="component-list">{exercise.edges.map(edge => <button key={edge.id} className={`component-option ${edge.equivalent ? 'equivalent' : ''}`} data-testid={`component-${edge.id}`} aria-pressed={current.selected.includes(edge.id)} disabled={locked || complete || !!current.pending} onClick={() => select(edge.id)}><span className="component-check" aria-hidden="true">{current.selected.includes(edge.id) ? '✓' : ''}</span><strong>{edge.label}</strong><span className="numeric">{formatExact(edge.value, settings)}</span></button>)}</div><p className="panel-note">Serie y paralelo se reconocen por los nodos, no por la orientación del símbolo.</p>{settings.mode === 'training' && <button className="hint-button" onClick={() => dispatch({ type: 'hint' })}>Pista conceptual</button>}</aside></div>
-      {current.pending ? <ArithmeticEntry key={current.pending.revision} pending={current.pending} settings={settings} notice={current.notice} dispatch={dispatch} /> : <div className={`feedback-strip ${feedbackState}`} role="status" aria-live={feedback.completion ? 'off' : 'polite'}>{feedbackMessage}</div>}
-      {complete && <section className={`result-strip ${liveCompletion && !liveCompletion.repeat && !liveCompletion.motionDisabled ? 'is-celebrating' : ''}`} aria-label="Circuito reducido"><div>{current.submitted && completion ? <div role="status" aria-atomic="true"><CompletionPresentation event={completion} animated={Boolean(liveCompletion)} /></div> : <><strong>Equivalente: {formatExact(exercise.edges[0].value, settings)}</strong><p>Podés deshacer para revisar antes de entregar.</p></>}</div>{!current.submitted && <button className="primary" onClick={() => dispatch({ type: 'submit' })}>{activeExam ? 'Entregar y continuar' : 'Entregar resultado'}</button>}{current.submitted && settings.mode !== 'exam' && <button className="primary" onClick={() => { const continueTopic = topicSession?.phase === 'circuit'; dispatch({ type: 'next' }); if (continueTopic) navigate('topics'); }}>Siguiente ejercicio</button>}</section>}
-      {settings.mode === 'training' && lastStep && !current.pending && <details className="step-explanation"><summary>Última reducción: fórmula y sustitución</summary><ReductionExplanation step={lastStep} settings={settings} /></details>}
-    </section><footer className="practice-footer"><span>Reducción manual · Solo serie y paralelo</span><span>Semilla {exercise.seed} · Mejor racha {progress.bestStreak} · {progress.completed} entregados</span></footer></>}
-    {(showHistory && !activeExam || exam?.status === 'finished') && <PracticeHistory history={state.history} exam={exam} onRepeat={item => { dispatch({ type: 'repeat', item }); setShowHistory(false); navigate('bench'); window.scrollTo({ top: 0, behavior: 'smooth' }); }} />}
+    <div className="view-content">
+      {activeView === 'topics' && <TopicPractice settings={settings} topicSession={topicSession} topicProgress={topicProgress || {}} onStart={topicId => requestChange(() => { dispatch({ type: 'start-topic', topicId }); navigate('topics'); })} onAnswer={answer => dispatch({ type: 'topic-answer', answer })} onContinue={() => { const startsCircuit = topicSession?.minisInCycle >= 2; dispatch({ type: 'continue-topic' }); if (startsCircuit) navigate('bench'); }} onExit={() => requestChange(() => { dispatch({ type: 'exit-topic' }); navigate('topics'); })} onDifficultyChange={difficulty => changeSettings({ difficulty })} onTopologyChange={topicTopology => changeSettings({ topicTopology })} onStyleChange={inductorStyle => changeSettings({ inductorStyle })} onViewCircuit={() => navigate('bench')} />}
+      {activeView === 'progress' && <ProgressPage progress={progress} topicProgress={topicProgress || {}} history={state.history} onPractice={activeExam ? undefined : () => openView('topics')} />}
+      {activeView === 'history' && <PracticeHistory history={state.history} reviewLocked={activeExam} onPractice={resume} onRepeat={activeExam ? undefined : item => requestChange(() => { dispatch({ type: 'repeat', item }); navigate('bench'); })} />}
+      {activeView === 'exam' && settings.mode === 'exam' && !activeExam && <section className="exam-summary" aria-label="Simulacro de parcial"><div><h2>{exam?.status === 'finished' ? exam.expired ? 'Parcial cerrado' : 'Parcial entregado' : 'Prepará tu parcial'}</h2><p>{exam?.status === 'finished' ? `${exam.results.filter(item => item.status === 'complete').length} de ${exam.count} ejercicios completos. Revisá los pasos y errores a continuación.` : `${settings.examCount} ejercicios · ${LEVELS[settings.difficulty].label} · ${settings.compType === 'R' ? 'Resistencias' : settings.compType === 'C' ? 'Capacitores' : 'Inductores'} · ${settings.examMinutes ? settings.examMinutes + ' minutos' : 'Sin límite de tiempo'} · Sin pistas ni fórmulas durante la sesión.`}</p></div><button className="primary" onClick={() => requestChange(() => dispatch({ type: 'start-exam' }))}>{exam?.status === 'finished' ? 'Comenzar otro parcial' : 'Comenzar parcial'}</button></section>}
+      {activeView === 'exam' && exam?.status === 'finished' && <PracticeHistory history={state.history} exam={exam} onRepeat={item => requestChange(() => { dispatch({ type: 'repeat', item }); navigate('bench'); })} />}
+    </div>
+    <Workbench state={state} dispatch={dispatch} feedback={feedback} visible={showWorkbench} deskRef={desk} concentration={concentration} onConcentration={setConcentration} remaining={remaining}
+      onNew={() => requestChange(() => dispatch({ type: 'new' }))}
+      onFinishExam={() => setDialog({ exam: true, title: '¿Finalizar el parcial?', message: 'Los ejercicios sin entregar quedarán incompletos. Podrás revisar los pasos y errores registrados.', confirmLabel: 'Finalizar parcial', run: () => { dispatch({ type: 'finish-exam' }); navigate('exam'); } })}
+      onNext={() => { const continueTopic = topicSession?.phase === 'circuit'; dispatch({ type: 'next' }); if (continueTopic) navigate('topics'); }} />
     <ExamCompletionToast event={feedback.completion} />
+    {dialog && <AppDialog title={dialog.title} onCancel={() => setDialog(null)} cancelLabel={dialog.help ? 'Cerrar ayuda' : 'Continuar practicando'} confirmLabel={dialog.confirmLabel} onConfirm={dialog.run ? () => { const run = dialog.run; setDialog(null); run(); } : undefined}>{dialog.help ? <PracticeHelp activeExam={activeExam} /> : <p>{dialog.message}</p>}</AppDialog>}
   </main>;
 }

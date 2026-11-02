@@ -60,7 +60,8 @@ function TechnicalCircuit({ exercise, settings, selected, onSelect, onClear, dis
     const matrix = svgRef.current.getScreenCTM();
     const nearby = drawing.geometries.filter(g => {
       const p = new DOMPoint(g.centerX, g.centerY).matrixTransform(matrix);
-      return Math.hypot(p.x - event.clientX, p.y - event.clientY) < (event.pointerType === 'touch' ? 36 : 24);
+      const pointerType = event.pointerType || event.nativeEvent?.pointerType || gesture.current.pointerType;
+      return Math.hypot(p.x - event.clientX, p.y - event.clientY) < (pointerType === 'touch' ? 36 : 24);
     });
     if (nearby.length > 1) { setCandidates(nearby.map(g => g.edge)); return; }
     if (nearby.length === 1) onSelect(nearby[0].edge.id);
@@ -68,6 +69,7 @@ function TechnicalCircuit({ exercise, settings, selected, onSelect, onClear, dis
     else onClear();
   }
   function pointerDown(event) {
+    gesture.current.pointerType = event.pointerType;
     gesture.current.moved = false;
     if (zoom <= 1) return;
     svgRef.current.setPointerCapture(event.pointerId);

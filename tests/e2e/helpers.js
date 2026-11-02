@@ -65,7 +65,16 @@ export async function findManualMove(page) {
   if (series.length > 1) return { ids: series.map(edge => edge.id), rule: 'series' };
   throw new Error('The visible circuit should always offer a manual move.');
 }
+export async function openComponentPanel(page) {
+  const toggle = page.getByRole('button', { name: /^Componentes/ });
+  if (await toggle.getAttribute('aria-expanded') === 'false') await toggle.click();
+}
+export async function applyPracticeSettings(page) {
+  const apply = page.getByRole('button', { name: 'Aplicar y comenzar' });
+  if (await apply.isVisible()) await apply.click();
+}
 export async function selectComponents(page, ids, touch = false) {
+  await openComponentPanel(page);
   for (const id of ids) {
     const button = page.getByTestId(`component-${id}`);
     await button.scrollIntoViewIfNeeded();

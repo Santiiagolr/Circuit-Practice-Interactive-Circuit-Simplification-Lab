@@ -1,6 +1,6 @@
 import AxeBuilder from '@axe-core/playwright';
 import { expect, test } from '@playwright/test';
-import { captureRuntimeErrors, expectNoHorizontalDocumentOverflow, findManualMove, performManualMove, solveVisibleCircuit } from './helpers';
+import { openComponentPanel, captureRuntimeErrors, expectNoHorizontalDocumentOverflow, findManualMove, performManualMove, solveVisibleCircuit } from './helpers';
 
 test('initial exercise and keyboard controls have no serious accessibility violations', async ({ page }, testInfo) => {
   test.skip(!['chromium', 'firefox', 'webkit'].includes(testInfo.project.name));
@@ -36,6 +36,7 @@ test('topic minis and progress navigation remain accessible without horizontal o
 test('the mobile detail list exposes named, operable 44px touch targets', async ({ page }, testInfo) => {
   test.skip(!['pixel-7', 'iphone-13', 'tablet', 'mobile-landscape'].includes(testInfo.project.name));
   await page.goto('/?seed=913&difficulty=challenge&type=C');
+  await openComponentPanel(page);
   const target = page.getByTestId('component-c1');
   const size = await target.boundingBox();
   expect(size.width).toBeGreaterThanOrEqual(44); expect(size.height).toBeGreaterThanOrEqual(44);

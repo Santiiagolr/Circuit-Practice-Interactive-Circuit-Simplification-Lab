@@ -1,0 +1,193 @@
+/* The laboratory's shared scale. Electrical drawing geometry stays in SVG. */
+:root {
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-6: 24px;
+  --space-8: 32px;
+  --radius-card: 12px;
+  --radius-control: 8px;
+  --shadow: none;
+  font-size: 16px;
+}
+[hidden] { display: none !important; }
+.practice-app { width: 100%; max-width: none; padding: var(--space-6); }
+.practice-app button, .practice-app select, .practice-app input { min-height: 44px; }
+.practice-app button { border-radius: var(--radius-control); box-shadow: none; }
+.practice-app p, .practice-app label, .practice-app summary { overflow-wrap: anywhere; }
+.practice-app h2 { font-size: clamp(22px, 2vw, 28px); }
+.practice-app h3 { font-size: 18px; }
+.app-header { margin-bottom: var(--space-4); }
+.app-identity p, .exercise-heading p, .practice-footer, .selection-count,
+.panel-note, .topic-stats, .progress-topic p, .history-entry p,
+.history-entry summary span + span, .setting, .drawing-caption { font-size: 14px; }
+.app-nav { display: flex; flex-wrap: wrap; gap: var(--space-1); width: fit-content; max-width: 100%; padding: var(--space-1); margin: 0 0 var(--space-4); border-radius: var(--radius-card); }
+.app-nav button { flex: 0 1 auto; min-height: 44px; font-size: 14px; }
+.settings-container { margin-bottom: var(--space-4); }
+.settings-sections { display: grid; gap: var(--space-4); padding: var(--space-4); border: 1px solid var(--line); border-radius: var(--radius-card); background: var(--paper); }
+.settings-sections fieldset { margin: 0; min-width: 0; padding: 0; border: 0; }
+.settings-sections legend { margin-bottom: var(--space-3); font-weight: 600; }
+.settings-sections .settings-grid { border: 0; border-radius: 0; padding: 0; gap: var(--space-4); background: transparent; box-shadow: none; }
+.settings-sections .check-setting { min-height: 44px; }
+.settings-actions { padding: var(--space-4) 0 0; }
+.draft-indicator { margin-left: var(--space-3); color: var(--muted); font-size: 14px; font-weight: 400; }
+.resume-bar { display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); margin-bottom: var(--space-4); padding: var(--space-3) var(--space-4); border-left: 3px solid var(--select); background: var(--surface-subtle); }
+.resume-bar span, .exam-nav-note { font-size: 14px; color: var(--muted); }
+.exam-nav-note { margin-bottom: var(--space-3); }
+.workbench { border-radius: var(--radius-card); }
+.desk-header { gap: var(--space-3); padding: var(--space-4); }
+.exercise-heading { flex: 1 1 240px; min-width: 0; }
+.exercise-heading h2 { font-size: 20px; }
+.telemetry { margin-left: 0; gap: var(--space-2); }
+.telemetry > span { min-width: 56px; border: 0; background: transparent; padding: var(--space-1) var(--space-2); }
+.desk-view-actions { display: flex; flex-wrap: wrap; gap: var(--space-2); }
+.desk-view-actions button { font-size: 14px; min-width: 44px; }
+.action-bar { padding: var(--space-3) var(--space-4); }
+.desk-content { grid-template-columns: minmax(0, 1fr) 300px; height: clamp(430px, 63dvh, 900px); min-height: 430px; }
+.desk-content.components-collapsed { grid-template-columns: minmax(0, 1fr); }
+.component-panel { padding: var(--space-4); }
+.component-panel h3 { font-size: 16px; }
+.component-option { grid-template-columns: 18px 48px minmax(0, 1fr); font-size: 14px; min-height: 48px; }
+.component-option > .numeric { font-size: 13px; }
+.component-option strong small { display: block; font-size: 11px; font-weight: 400; }
+.component-option.equivalent { border-style: dashed; }
+.component-option[aria-pressed="true"] { border-width: 2px; padding: 7px; }
+.component-option:focus-visible { outline: 3px solid var(--focus); outline-offset: 1px; }
+.circuit-component.selected .component-hitbox { stroke-width: 2; }
+.circuit-component.equivalent:not(.selected) .component-hitbox { stroke: var(--equivalent); stroke-dasharray: 4 3; vector-effect: non-scaling-stroke; }
+.drawing-caption { min-height: 36px; }
+.view-tools span { font-size: 14px; }
+.feedback-strip { font-size: 14px; }
+.arithmetic-entry { padding: var(--space-4); scroll-margin-block: var(--space-6); }
+.arithmetic-selection { color: var(--muted); margin-bottom: var(--space-2); }
+.arithmetic-entry p { font-size: 14px; }
+.answer-row input { font-size: 16px; }
+.answer-row input[aria-invalid="true"] { border: 2px solid var(--error); }
+.practice-footer { align-items: start; }
+.practice-footer summary { padding: 0; min-height: 44px; }
+.practice-footer details { max-width: 100%; }
+.is-concentrating > .settings-container, .is-concentrating > .exam-nav-note { display: none; }
+.is-concentrating .telemetry-score, .is-concentrating .step-streak-indicator, .is-concentrating .practice-footer { display: none; }
+.is-concentrating .desk-content { height: calc(100dvh - 230px); max-height: none; }
+.topics-page, .progress-page, .history-section { padding: var(--space-6); border-radius: var(--radius-card); box-shadow: none; }
+.history-section { margin-top: 0; }
+.topics-page .eyebrow, .progress-page .eyebrow { text-transform: none; letter-spacing: 0; font-size: 14px; }
+.topic-families { display: grid; gap: var(--space-6); }
+.topic-family > header { margin-bottom: var(--space-3); }
+.topic-family > header p { margin-top: var(--space-1); font-size: 14px; color: var(--muted); }
+.topic-card { align-items: start; padding: var(--space-4); }
+.topic-card h4 { font-size: 18px; font-weight: 600; margin: 0 0 var(--space-2); }
+.topic-card:hover { transform: none; }
+.topic-card p, .topic-stats { font-size: 14px; }
+.topic-card-symbol { width: 44px; height: 44px; }
+.topic-cycle-progress { margin-block: var(--space-6); }
+.mini-question h4 { margin-top: 0; }
+.mini-element.is-target path { stroke-width: 3; }
+.mini-nodes circle { stroke: var(--paper); stroke-width: 2; }
+.mini-card-heading .topic-stats { font-size: 14px; }
+.progress-cards { gap: var(--space-3); }
+.progress-card { padding: var(--space-4); }
+.progress-card span { font-size: 14px; }
+.progress-history-note { margin-top: var(--space-4); font-size: 14px; }
+.progress-rewards { margin-top: var(--space-6); border-top: 1px solid var(--line); }
+.progress-rewards > summary { font-weight: 600; }
+.empty-state { display: grid; justify-items: start; gap: var(--space-3); padding: var(--space-6); margin-block: var(--space-4); background: var(--surface-subtle); border-left: 3px solid var(--select); }
+.empty-state p { max-width: 65ch; }
+.history-filters { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--space-4); margin-block: var(--space-6); }
+.history-entry > summary { align-items: center; padding-block: var(--space-4); }
+.history-entry > summary::before { content: '+'; font: 20px 'IBM Plex Mono', monospace; color: var(--select); }
+.history-entry[open] > summary::before { content: '−'; }
+.history-entry > summary > span:first-of-type { flex: 1 1 240px; }
+.history-entry-body { padding-bottom: var(--space-4); }
+.history-result { display: grid; gap: var(--space-2); padding: var(--space-4); background: var(--surface-subtle); }
+.history-pagination { display: flex; justify-content: space-between; align-items: center; gap: var(--space-3); margin-top: var(--space-6); }
+.history-pagination p { text-align: center; font-size: 14px; }
+.app-dialog { width: min(600px, calc(100% - 32px)); max-height: calc(100dvh - 32px); border: 1px solid var(--line); border-radius: var(--radius-card); padding: var(--space-6); background: var(--paper); color: var(--ink); box-shadow: 0 20px 70px #0004; }
+.app-dialog::backdrop { background: #081728a6; }
+.dialog-content { margin-block: var(--space-4); }
+.dialog-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: var(--space-2); }
+.practice-help { font-size: 14px; }
+.practice-help dt { margin-top: var(--space-4); font-weight: 600; }
+.practice-help dd { margin: var(--space-1) 0 0; color: var(--muted); }
+.practice-help dl { margin-block: var(--space-4); }
+.app-dialog kbd { opacity: 1; color: var(--ink); font-size: 13px; margin-left: 0; }
+.desk-fullscreen .desk-content { height: auto; }
+@media (max-width: 900px) {
+  .practice-app { padding: var(--space-4); }
+  .workbench { overflow: clip; }
+  .action-bar { position: sticky; top: 0; z-index: 8; }
+  .desk-content { display: flex; flex-direction: column; height: auto; min-height: 0; max-height: none; }
+  .drawing-area { height: clamp(320px, 55dvh, 620px); min-height: 320px; flex: 0 0 auto; }
+  .component-panel { border-left: 0; border-top: 1px solid var(--line); max-height: 320px; }
+  .component-list { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .topic-controls { min-width: 0; }
+}
+@media (max-width: 700px), (max-height: 500px) and (max-width: 1000px) {
+  html, .desk-fullscreen { scroll-padding-block: 16px calc(100px + env(safe-area-inset-bottom, 0px)); }
+  .practice-app { padding: var(--space-3); }
+  .app-header { flex-wrap: wrap; align-items: center; }
+  .app-identity p { font-size: 14px; }
+  .header-actions button { min-height: 44px; font-size: 14px; }
+  .app-nav { width: 100%; }
+  .app-nav button { flex: 1 1 auto; padding-inline: var(--space-3); }
+  .settings-grid { grid-template-columns: 1fr; }
+  .settings-grid .check-setting { grid-column: auto; }
+  .setting select { font-size: 16px; }
+  .desk-header { padding: var(--space-3); }
+  .desk-header .exercise-heading { flex-basis: 100%; }
+  .desk-view-actions { width: 100%; }
+  .desk-view-actions button { flex: 1; padding-inline: var(--space-2); }
+  .telemetry { order: 0; width: 100%; justify-content: start; }
+  .telemetry > span { flex: 0 1 auto; text-align: left; }
+  .telemetry b { font-size: 14px; }
+  .bench-view { padding-bottom: calc(84px + env(safe-area-inset-bottom, 0px)); }
+  .action-bar, .desk-fullscreen .action-bar { position: static; padding: var(--space-2); }
+  .reduction-actions { position: fixed; z-index: 20; inset: auto 0 0; display: flex; flex-wrap: wrap; gap: var(--space-2); padding: var(--space-2) var(--space-3) calc(var(--space-2) + env(safe-area-inset-bottom, 0px)); background: var(--toolbar-bg); border-top: 1px solid var(--line); }
+  .reduction-actions button.primary { flex: 1; min-width: 90px; }
+  .reduction-actions .selection-count { display: block; flex: 0 0 100%; text-align: center; font-size: 14px; padding: 0; }
+  .reduction-actions button:not(.primary) { flex: 1; }
+  .secondary-actions { width: 100%; flex: 1 1 100%; }
+  .secondary-actions button { font-size: 14px; }
+  .has-pending-answer .reduction-actions { display: none; }
+  .component-option { grid-template-columns: 18px 44px minmax(0, 1fr); font-size: 14px; }
+  .component-option > .numeric { font-size: 13px; }
+  .drawing-caption { flex-wrap: wrap; font-size: 14px; }
+  .drawing-caption span { display: block; }
+  .drawing-area { height: clamp(320px, 52dvh, 580px); min-height: 320px; }
+  .topics-page, .progress-page, .history-section { padding: var(--space-4); }
+  .history-filters { grid-template-columns: 1fr; }
+  .history-pagination { flex-wrap: wrap; }
+  .history-pagination p { order: -1; flex: 1 0 100%; }
+  .history-entry > summary { gap: var(--space-2); }
+  .resume-bar { flex-wrap: wrap; }
+  .empty-state { padding: var(--space-4); }
+  .topic-controls { grid-template-columns: 1fr; }
+  .is-concentrating .desk-content { height: auto; }
+  .desk-fullscreen { padding-bottom: calc(88px + env(safe-area-inset-bottom, 0px)); }
+  .desk-fullscreen.has-pending-answer { padding-bottom: var(--space-3); }
+}
+@media (max-width: 450px) {
+  .component-list { grid-template-columns: 1fr; }
+  .dialog-actions button { width: 100%; }
+  .app-dialog { padding: var(--space-4); }
+  .topic-cycle-progress { gap: var(--space-1); font-size: 14px; }
+}
+@media (max-width: 700px) {
+  .app-header { flex-wrap: nowrap; gap: 8px; }
+  .app-identity p { display: none; }
+  .app-identity svg { width: 32px; height: 32px; padding: 6px; }
+  .app-identity h1 { font-size: 16px; }
+  .header-actions button { padding-inline: 8px; }
+  .header-actions button span { display: none; }
+  .header-actions button:first-child { min-width: 44px; }
+  .desk-header .exercise-heading h2 { font-size: 18px; }
+  .desk-view-actions { gap: 4px; }
+  .desk-view-actions button { font-size: 13px; padding-inline: 4px; }
+  .desk-header .telemetry { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 4px; }
+  .desk-header .telemetry > span { min-width: 0; margin: 0; padding: 0; font-size: 12px; }
+  .desk-header .telemetry b { display: block; margin-left: 0; font-size: 14px; }
+  .desk-header .step-streak-indicator__label { font-size: 12px; }
+  .desk-header .streak-segments, .desk-header .step-streak-indicator__count small { display: none; }
+  .desk-header .telemetry .exam-clock { grid-column: 1 / -1; font-size: 18px; }
+}

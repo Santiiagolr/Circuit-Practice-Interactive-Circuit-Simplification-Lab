@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test';
-import { captureRuntimeErrors, expectNoHorizontalDocumentOverflow, findManualMove, performManualMove, selectComponents, solveVisibleCircuit, visibleLabelOverlaps } from './helpers';
+import { applyPracticeSettings, openComponentPanel, captureRuntimeErrors, expectNoHorizontalDocumentOverflow, findManualMove, performManualMove, selectComponents, solveVisibleCircuit, visibleLabelOverlaps } from './helpers';
 
 test('opens the complete circuit at desktop and supports fit and fullscreen', async ({ page }) => {
   const errors = captureRuntimeErrors(page);
@@ -35,7 +35,7 @@ test('practices ideal inductors with selectable symbols and a persistent mixed-t
   await page.getByLabel('Recorrido de inductores').selectOption('mixed');
   await page.reload();
   await expect(page.getByLabel('Recorrido de inductores')).toHaveValue('mixed');
-  await expect(page.getByLabel('Estilo de inductor')).toHaveValue('copper');
+  await expect(page.locator('.topics-page').getByLabel('Estilo de inductor')).toHaveValue('copper');
 
   await page.getByRole('button', { name: 'Sí, cumplen la regla' }).click();
   await page.getByRole('button', { name: 'Siguiente mini ejercicio' }).click();
@@ -123,6 +123,8 @@ test('keeps a delivered circuit visible, replays its verified steps and allows a
   await expect(page.getByText(/Paso 1 de/)).toBeVisible();
   await page.getByRole('button', { name: 'Por temas' }).click();
   await page.getByRole('button', { name: 'Empezar tema' }).first().click();
+  await page.getByRole('button', { name: 'Historial', exact: true }).click();
+  await page.locator('.history-entry > summary').first().click();
   await page.getByRole('button', { name: 'Repetir sin puntos' }).click();
   await expect(page.locator('.workbench')).toBeVisible();
   await expect(page.locator('.topics-page')).toHaveCount(0);
@@ -167,6 +169,7 @@ test('selects through a physical SVG click and the accessible component panel', 
   await component.locator('[data-component-hitbox]').click();
   await expect(component).toHaveAttribute('aria-pressed', 'true');
   const selectedId = await component.getAttribute('data-component-id');
+  await openComponentPanel(page);
   await expect(page.getByTestId(`component-${selectedId}`)).toHaveAttribute('aria-pressed', 'true');
   expect(errors).toEqual([]);
 });
@@ -216,6 +219,7 @@ test('capacitor settings and an unfinished timed exam survive page reload', asyn
   await page.getByLabel('Modalidad').selectOption('exam');
   await page.getByLabel('Ejercicios del parcial').selectOption('3');
   await page.getByLabel('Tiempo límite').selectOption('15');
+  await applyPracticeSettings(page);
   await page.getByRole('button', { name: 'Comenzar parcial' }).click();
   await expect(page.getByRole('button', { name: 'Pista conceptual' })).toHaveCount(0);
   await page.reload();
@@ -229,6 +233,7 @@ test('physical touch controls complete an exercise on mobile without horizontal 
   const errors = captureRuntimeErrors(page);
   await page.goto('/?seed=301&difficulty=guided&type=C');
   await expectNoHorizontalDocumentOverflow(page);
+  await openComponentPanel(page);
   await expect(page.locator('.component-panel')).toBeVisible();
   for (const button of await page.locator('.component-option').all()) {
     const box = await button.boundingBox(); expect(box.width).toBeGreaterThanOrEqual(44); expect(box.height).toBeGreaterThanOrEqual(44);
@@ -264,13 +269,14 @@ test('a three-question exam records one delivery and leaves a review', async ({ 
   await page.getByText('Configurar práctica').click();
   await page.getByLabel('Modalidad').selectOption('exam');
   await page.getByLabel('Ejercicios del parcial').selectOption('3');
+  await applyPracticeSettings(page);
   await page.getByRole('button', { name: 'Comenzar parcial' }).click();
   await solveVisibleCircuit(page);
   const stepScore = Number(await page.getByTestId('score').textContent());
   await page.getByRole('button', { name: 'Entregar y continuar' }).click();
   await expect(page.getByTestId('score')).toHaveText(String(stepScore + 10));
-  page.on('dialog', dialog => dialog.accept());
   await page.getByRole('button', { name: 'Finalizar parcial' }).click();
+  await page.getByRole('dialog').getByRole('button', { name: 'Finalizar parcial' }).click();
   await expect(page.getByRole('heading', { name: 'Parcial cerrado' })).toBeVisible();
   await expect(page.locator('.exam-summary')).toContainText('1 de 3 ejercicios completos');
   await expect(page.locator('.history-section')).toContainText('Incompleto');
@@ -324,12 +330,14 @@ test('dense overview keeps readable IDs and large SVG targets while offering det
   expect(metrics.width).toBeGreaterThanOrEqual(43.5);
   expect(metrics.height).toBeGreaterThanOrEqual(43.5);
   expect(await visibleLabelOverlaps(page)).toEqual([]);
+  await openComponentPanel(page);
   await expect(page.locator('.component-panel')).toContainText('R15');
   await expectNoHorizontalDocumentOverflow(page);
   if (testInfo.project.name === 'mobile-landscape') {
     const component = page.locator('svg [data-component-id]').first();
     const hitbox = component.locator('[data-component-hitbox]');
-    await hitbox.scrollIntoViewIfNeeded();
+    // A raw touchscreen tap does not auto-scroll past the persistent bottom bar.
+    await hitbox.evaluate(node => node.scrollIntoView({ block: 'center', inline: 'center' }));
     const proximity = await component.evaluate(target => {
       const svg = target.ownerSVGElement, matrix = svg.getScreenCTM();
       const centers = [...svg.querySelectorAll('[data-component-id]')].map(item => {

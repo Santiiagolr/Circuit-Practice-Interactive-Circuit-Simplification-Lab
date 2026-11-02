@@ -60,14 +60,14 @@ function historyWithAbandoned(state, now) {
   // Topic mini rounds do not own current.exercise. That exercise was already
   // archived on entry, so leaving or switching topics must not archive it twice.
   if (state.current.submitted || state.topicSession?.phase === 'mini') return state.history;
-  return [...state.history, resultRecord(state, now, 'abandoned')].slice(-200);
+  return [...state.history, resultRecord(state, now, 'abandoned')];
 }
 function expire(state, now) {
   if (state.exam?.status !== 'active' || !state.exam.deadline || now < state.exam.deadline) return state;
   const item = resultRecord(state, state.exam.deadline, 'incomplete');
   const results = [...state.exam.results, item];
   while (results.length < state.exam.count) results.push({ id: `pending-${results.length}`, status: 'incomplete', steps: 0, stepPoints: 0, errors: 0, undos: 0, elapsed: 0, attempts: [] });
-  return { ...state, history: [...state.history, item].slice(-200), exam: { ...state.exam, status: 'finished', expired: true, results }, current: { ...state.current, pending: null, selected: [], submitted: true } };
+  return { ...state, history: [...state.history, item], exam: { ...state.exam, status: 'finished', expired: true, results }, current: { ...state.current, pending: null, selected: [], submitted: true } };
 }
 export function sessionReducer(state, action) {
   const now = action.now ?? Date.now();
@@ -92,6 +92,9 @@ export function sessionReducer(state, action) {
       if (state.settings.manual && action.rule !== 'delete') return { ...state, current: { ...current, pending: { ids: [...current.selected], rule: action.rule, revision: current.exercise.revision, value: check.value }, notice: null } };
       return commit(state, current.selected, action.rule, now);
     }
+    case 'answer-draft':
+      if (locked || !current.pending || typeof action.text !== 'string') return state;
+      return { ...state, current: { ...current, pending: { ...current.pending, text: action.text.slice(0, 500) }, notice: null } };
     case 'answer': {
       if (locked || !current.pending) return state;
       if (current.pending.revision !== current.exercise.revision) return { ...state, current: { ...current, pending: null } };
@@ -147,10 +150,10 @@ export function sessionReducer(state, action) {
       return spawn({ ...state, topicSession: nextSession }, Number(action.seed ?? topicSession.seed + topicSession.cycles + 1), now);
     }
     case 'settings': {
-      if (state.exam?.status === 'active') return state;
       const settings = normalizeSettings({ ...state.settings, ...action.settings });
       const visualOnly = Object.keys(action.settings).every(key => ['flow', 'resistorStyle', 'inductorStyle', 'theme'].includes(key));
       if (visualOnly) return record({ ...state, settings }, { kind: 'configuration', settings: action.settings }, now);
+      if (state.exam?.status === 'active') return state;
       if (state.topicSession?.phase === 'mini' && Object.keys(action.settings).every(key => key === 'difficulty')) {
         return record({ ...state, settings }, { kind: 'configuration', settings: action.settings }, now);
       }
@@ -207,7 +210,7 @@ export function sessionReducer(state, action) {
       const reward = current.rewardEligible === false ? null : calculateReward(state.progress, state.settings.difficulty, current.attempts.some(item => item.kind === 'error'));
       const item = resultRecord(state, now, 'complete', reward);
       if (current.rewardEligible !== false && state.history.some(entry => entry.id === item.id && entry.status === 'complete' && !entry.repeat)) return state;
-      const next = { ...state, progress: reward ? applyReward(state.progress, reward) : state.progress, history: [...state.history, item].slice(-200), current: { ...current, submitted: true, selected: [], pending: null } };
+      const next = { ...state, progress: reward ? applyReward(state.progress, reward) : state.progress, history: [...state.history, item], current: { ...current, submitted: true, selected: [], pending: null } };
       if (state.topicSession?.phase === 'circuit') {
         const counts = state.topicProgress[state.topicSession.topicId];
         next.topicProgress = { ...state.topicProgress, [state.topicSession.topicId]: { ...counts, circuits: counts.circuits + 1 } };
@@ -263,11 +266,12 @@ function validSession(saved) {
   if (['stepStreak', 'bestStepStreak'].some(key => saved.progress && Object.hasOwn(saved.progress, key) && (!Number.isSafeInteger(saved.progress[key]) || saved.progress[key] < 0))) return false;
   if (current.pending != null && (!Array.isArray(current.pending.ids) || current.pending.ids.length < 2 || current.pending.ids.some(id => !edgeIds.has(id)) || !['series', 'parallel'].includes(current.pending.rule) || current.pending.revision !== current.exercise.revision || !validStoredValue(current.pending.value))) return false;
   if (current.pending != null) {
+    if (current.pending.text != null && (typeof current.pending.text !== 'string' || current.pending.text.length > 500)) return false;
     if (!saved.settings?.manual) return false;
     const verified = prepareReduction(current.exercise, current.pending.ids, current.pending.rule);
     if (!verified.valid || JSON.stringify(verified.value) !== JSON.stringify(current.pending.value)) return false;
   }
-  if (!Array.isArray(saved.history) || saved.history.length > 200 || !saved.history.every(validHistoryItem) || !saved.recent || typeof saved.recent !== 'object' || Object.values(saved.recent).some(items => !Array.isArray(items) || items.length > 20 || items.some(signature => typeof signature !== 'string'))) return false;
+  if (!Array.isArray(saved.history) || !saved.history.every(validHistoryItem) || !saved.recent || typeof saved.recent !== 'object' || Object.values(saved.recent).some(items => !Array.isArray(items) || items.length > 20 || items.some(signature => typeof signature !== 'string'))) return false;
   if (saved.topicProgress != null && !validateTopicProgress(saved.topicProgress)) return false;
   if (saved.topicSession != null) {
     if (!validateTopicSession(saved.topicSession)) return false;

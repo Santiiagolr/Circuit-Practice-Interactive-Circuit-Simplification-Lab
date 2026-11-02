@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test';
 import { mkdir } from 'node:fs/promises';
-import { captureRuntimeErrors, expectNoHorizontalDocumentOverflow, findManualMove, performManualMove, solveVisibleCircuit } from './helpers.js';
+import { applyPracticeSettings, captureRuntimeErrors, expectNoHorizontalDocumentOverflow, findManualMove, performManualMove, solveVisibleCircuit } from './helpers.js';
 
 test('R C and both L symbols reward accepted reductions and never replay them on reload', async ({ page }) => {
   const errors = captureRuntimeErrors(page);
@@ -19,8 +19,11 @@ test('R C and both L symbols reward accepted reductions and never replay them on
     await expect(page.getByTestId('step-streak')).toHaveAttribute('aria-label', `${streakBefore + 1} reducciones correctas consecutivas`);
     await expectNoHorizontalDocumentOverflow(page);
     const card = await page.getByTestId('step-streak').boundingBox();
-    const segments = await page.locator('.streak-segments').boundingBox();
-    expect(segments.x + segments.width).toBeLessThanOrEqual(card.x + card.width - 2);
+    // The compact phone HUD omits decorative segments but retains the named count.
+    if (await page.locator('.streak-segments').isVisible()) {
+      const segments = await page.locator('.streak-segments').boundingBox();
+      expect(segments.x + segments.width).toBeLessThanOrEqual(card.x + card.width - 2);
+    }
     const score = await page.getByTestId('score').textContent();
     await page.reload();
     await expect(page.getByTestId('score')).toHaveText(score);
@@ -52,6 +55,7 @@ test('completion feedback survives exam auto-next and the last exercise without 
   await page.goto('/?seed=76&type=R&mode=exam');
   await page.getByText('Configurar práctica').click();
   await page.getByLabel('Ejercicios del parcial').selectOption('3');
+  await applyPracticeSettings(page);
   await page.getByRole('button', { name: 'Comenzar parcial' }).click();
   for (let index = 0; index < 3; index++) {
     await solveVisibleCircuit(page);
@@ -61,7 +65,7 @@ test('completion feedback survives exam auto-next and the last exercise without 
     if (index < 2) await expect(page.getByRole('heading', { name: new RegExp(`Parcial · ${index + 2}/3`) })).toBeVisible();
   }
   await expect(page.getByRole('heading', { name: 'Parcial entregado' })).toBeVisible();
-  await expect(page.locator('.workbench')).toHaveCount(0);
+  await expect(page.locator('.workbench')).toBeHidden();
   await expect(page.locator('.exam-completion-toast')).toHaveCount(1);
   await expect(page.locator('.exam-completion-toast')).toHaveCount(0, { timeout: 3000 });
   expect(errors).toEqual([]);
